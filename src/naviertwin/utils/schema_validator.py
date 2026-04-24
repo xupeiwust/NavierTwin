@@ -9,8 +9,6 @@ Examples:
 
 from __future__ import annotations
 
-from typing import Any
-
 
 def validate(data: dict, schema: dict) -> tuple[bool, list[str]]:
     """schema = {key: type-or-callable}. callable returns bool."""
