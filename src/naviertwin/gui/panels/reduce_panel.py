@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSpinBox,
-    QSplitter,
     QStackedWidget,
     QTextEdit,
     QVBoxLayout,
@@ -43,6 +42,8 @@ class ReducePanel(QWidget):
         super().__init__(parent)
         self._dataset: Optional[CFDDataset] = None
         self._reducer: Optional[object] = None
+        self._active_field: str = ""
+        self._reduction_artifact: dict[str, object] | None = None
         self._setup_ui()
 
     # ──────────────────────────────────────────────────────────────────
@@ -193,9 +194,14 @@ class ReducePanel(QWidget):
     def set_dataset(self, dataset: CFDDataset) -> None:
         """분석할 CFDDataset을 설정한다."""
         self._dataset = dataset
+        self._reduction_artifact = None
         self._run_btn.setEnabled(True)
         self._field_combo.clear()
         self._field_combo.addItems(dataset.field_names)
+
+    def get_reduction_artifact(self) -> dict[str, object] | None:
+        """마지막 축소 결과 아티팩트를 반환한다."""
+        return self._reduction_artifact
 
     # ──────────────────────────────────────────────────────────────────
     # 슬롯
@@ -209,6 +215,7 @@ class ReducePanel(QWidget):
             return
         method_idx = self._method_combo.currentIndex()
         field = self._field_combo.currentText()
+        self._active_field = field
 
         try:
             snapshots = self._extract_snapshots(field)
@@ -222,19 +229,15 @@ class ReducePanel(QWidget):
             self._result_text.append(f"[ERROR] {exc}\n")
 
     def _extract_snapshots(self, field: str) -> np.ndarray:
-        """메쉬에서 스냅샷 행렬을 추출한다 (n_features, 1)."""
-        mesh = self._dataset.mesh  # type: ignore[union-attr]
-        if field in mesh.point_data:
-            arr = np.array(mesh.point_data[field], dtype=float)
-        elif field in mesh.cell_data:
-            arr = np.array(mesh.cell_data[field], dtype=float)
-        else:
-            raise ValueError(f"필드 '{field}'가 메쉬에 없습니다.")
+        """메쉬에서 스냅샷 행렬을 추출한다.
 
-        if arr.ndim > 1:
-            # 벡터 → 크기
-            arr = np.linalg.norm(arr, axis=1)
-        return arr.reshape(-1, 1)  # (n_features, 1)
+        다중 타임스텝 데이터를 찾을 수 있으면 (n_features, n_steps) 형태로
+        반환하고, 그렇지 않으면 기존과 동일하게 단일 스냅샷
+        (n_features, 1)을 반환한다.
+        """
+        if self._dataset is None:
+            raise RuntimeError("dataset이 설정되지 않았습니다.")
+        return self._dataset.extract_field_snapshots(field)
 
     def _run_pod(self, snapshots: np.ndarray) -> None:
         from naviertwin.core.dimensionality_reduction.linear.pod import SnapshotPOD
@@ -249,6 +252,26 @@ class ReducePanel(QWidget):
         energy = reducer.energy_ratio
 
         self._reducer = reducer
+        reducer.training_metadata = {
+            "dataset_id": id(self._dataset) if self._dataset is not None else None,
+            "field_name": self._active_field,
+            "n_modes": int(getattr(reducer, "n_components", n_modes)),
+            "method": "pod",
+        }
+        coeffs = reducer.encode(snapshots)
+        params = (
+            np.asarray(self._dataset.time_steps[: coeffs.shape[0]], dtype=float)
+            if self._dataset is not None and len(self._dataset.time_steps) >= coeffs.shape[0]
+            else np.arange(coeffs.shape[0], dtype=float)
+        )
+        self._reduction_artifact = {
+            "method": "pod",
+            "field_name": self._active_field,
+            "snapshots": snapshots,
+            "coeffs": coeffs,
+            "params": params.reshape(-1, 1),
+            "dataset_id": id(self._dataset) if self._dataset is not None else None,
+        }
         msg = (
             f"Snapshot POD 완료\n"
             f"  modes: {n_modes}, energy: {energy[-1]*100:.2f}%\n"
@@ -271,6 +294,26 @@ class ReducePanel(QWidget):
         energy = reducer.energy_ratio
 
         self._reducer = reducer
+        reducer.training_metadata = {
+            "dataset_id": id(self._dataset) if self._dataset is not None else None,
+            "field_name": self._active_field,
+            "n_modes": int(getattr(reducer, "n_components", n_modes)),
+            "method": "randomized_pod",
+        }
+        coeffs = reducer.encode(snapshots)
+        params = (
+            np.asarray(self._dataset.time_steps[: coeffs.shape[0]], dtype=float)
+            if self._dataset is not None and len(self._dataset.time_steps) >= coeffs.shape[0]
+            else np.arange(coeffs.shape[0], dtype=float)
+        )
+        self._reduction_artifact = {
+            "method": "randomized_pod",
+            "field_name": self._active_field,
+            "snapshots": snapshots,
+            "coeffs": coeffs,
+            "params": params.reshape(-1, 1),
+            "dataset_id": id(self._dataset) if self._dataset is not None else None,
+        }
         msg = (
             f"Randomized POD 완료\n"
             f"  modes: {n_modes}, energy: {energy[-1]*100:.2f}%\n"
@@ -301,6 +344,20 @@ class ReducePanel(QWidget):
         if freqs is not None and len(freqs) > 0:
             msg += f"  top freq: {sorted(abs(freqs))[:3]}\n"
         self._result_text.append(msg)
+        analyzer.training_metadata = {
+            "dataset_id": id(self._dataset) if self._dataset is not None else None,
+            "field_name": self._active_field,
+            "n_modes": int(n_modes),
+            "method": f"dmd:{method}",
+        }
+        self._reduction_artifact = {
+            "method": f"dmd:{method}",
+            "field_name": self._active_field,
+            "snapshots": snapshots,
+            "coeffs": None,
+            "params": None,
+            "dataset_id": id(self._dataset) if self._dataset is not None else None,
+        }
         self.reduction_done.emit("dmd", analyzer)
 
     def _update_energy_plot(self, energy: np.ndarray) -> None:

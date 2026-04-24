@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+from naviertwin import __version__
+
 
 def _build_parser() -> argparse.ArgumentParser:
     """CLI 인수 파서를 구성하여 반환한다.
@@ -26,7 +28,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="naviertwin",
         description=(
             "NavierTwin — CFD 후처리 결과를 AI/ROM 디지털 트윈으로 변환하는 툴\n"
-            "버전: 1.0.0"
+            f"버전: {__version__}"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -39,7 +41,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version="%(prog)s 1.0.0",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "--config",
@@ -78,7 +80,7 @@ def _run_gui(config_path: str | None) -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("NavierTwin")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion(__version__)
     app.setOrganizationName("NavierTwin")
 
     from naviertwin.gui.main_window import MainWindow  # noqa: PLC0415

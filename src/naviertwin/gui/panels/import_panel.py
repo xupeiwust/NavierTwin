@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QSizePolicy,
     QSplitter,
     QTextEdit,
     QVBoxLayout,

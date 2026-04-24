@@ -6,8 +6,9 @@ Signals:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -37,6 +38,7 @@ class ExportPanel(QWidget):
     """
 
     export_done = Signal(str)
+    project_loaded = Signal(object, object)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -139,7 +141,10 @@ class ExportPanel(QWidget):
     def set_dataset(self, dataset: CFDDataset) -> None:
         """내보낼 CFDDataset을 설정한다."""
         self._dataset = dataset
+        # dataset이 바뀌면 기존 engine은 같은 데이터 기준이 아닐 수 있으므로 초기화한다.
+        self._engine = None
         self._log(f"Dataset 설정: {dataset.n_points} pts, {dataset.n_cells} cells")
+        self._log("TwinEngine 상태 초기화")
 
     def set_engine(self, engine: object) -> None:
         """내보낼 TwinEngine을 설정한다."""
@@ -195,13 +200,28 @@ class ExportPanel(QWidget):
         compression = "gzip" if self._compress_cb.isChecked() else None
         save_dataset(self._dataset, path, compression=compression)
         self._log(f"✓ .ntwin 저장: {path}")
+        metadata = self._build_project_metadata(path)
+        self._write_metadata_sidecar(path, metadata)
+        self._attach_project_metadata(metadata)
+        if self._include_model_cb.isChecked():
+            if self._engine is None:
+                self._log("[WARN] 모델 포함이 선택됐지만 TwinEngine이 없습니다.")
+            elif hasattr(self._engine, "save"):
+                model_path = path.with_suffix(".engine.pkl")
+                self._engine.save(model_path)  # type: ignore[union-attr]
+                self._log(f"✓ TwinEngine 저장: {model_path}")
+                metadata["has_engine"] = True
+                metadata["engine_path"] = str(model_path)
+                self._write_metadata_sidecar(path, metadata)
+                self._attach_project_metadata(metadata)
+            else:
+                self._log("[WARN] 현재 엔진은 save()를 지원하지 않습니다.")
         self.export_done.emit(str(path))
 
     def _export_vtk(self, path: Path) -> None:
         if self._dataset is None:
             self._log("[WARN] Dataset이 없습니다.")
             return
-        import pyvista as pv
 
         mesh = self._dataset.mesh
         mesh.save(str(path))
@@ -256,9 +276,27 @@ class ExportPanel(QWidget):
             return
         try:
             from naviertwin.core.export.ntwin_format import load_dataset
+            self._engine = None
             dataset = load_dataset(Path(path))
             self._dataset = dataset
             self._log(f"✓ 프로젝트 로드: {path} ({dataset.n_points} pts)")
+
+            metadata = self._read_metadata_sidecar(Path(path))
+            if metadata is not None:
+                self._attach_project_metadata(metadata)
+                self._apply_loaded_metadata_to_dataset(metadata)
+
+            model_path = Path(path).with_suffix(".engine.pkl")
+            if model_path.exists():
+                from naviertwin.core.digital_twin.twin_engine import TwinEngine
+
+                self._engine = TwinEngine.load(model_path)
+                self._log(f"✓ TwinEngine 로드: {model_path}")
+            else:
+                self._log("ℹ TwinEngine 파일 없음 (.engine.pkl)")
+            if metadata is not None and self._engine is not None:
+                self._attach_project_metadata(metadata)
+            self.project_loaded.emit(self._dataset, self._engine)
         except Exception as exc:
             self._log(f"[ERROR] 프로젝트 로드 실패: {exc}")
 
@@ -266,3 +304,75 @@ class ExportPanel(QWidget):
         self._log_text.append(msg)
         sb = self._log_text.verticalScrollBar()
         sb.setValue(sb.maximum())
+
+    def _build_project_metadata(self, path: Path) -> dict[str, Any]:
+        """현재 프로젝트 상태를 JSON 직렬화 가능한 메타데이터로 구성한다."""
+        assert self._dataset is not None
+        metadata: dict[str, Any] = {
+            "project_path": str(path),
+            "include_model": self._include_model_cb.isChecked(),
+            "has_engine": self._engine is not None and self._include_model_cb.isChecked(),
+            "engine_path": None,
+            "dataset": {
+                "n_points": int(self._dataset.n_points),
+                "n_cells": int(self._dataset.n_cells),
+                "n_time_steps": int(self._dataset.n_time_steps),
+                "field_names": list(self._dataset.field_names),
+            },
+        }
+        if self._engine is not None:
+            metadata["engine"] = self._extract_engine_metadata(self._engine)
+        return metadata
+
+    def _extract_engine_metadata(self, engine: object) -> dict[str, Any]:
+        """TwinEngine의 안전한 메타데이터를 추출한다."""
+        reducer = getattr(engine, "reducer", None)
+        surrogate = getattr(engine, "surrogate", None)
+        return {
+            "reducer_type": getattr(engine, "reducer_type", None),
+            "surrogate_type": getattr(engine, "surrogate_type", None),
+            "n_modes": int(getattr(engine, "n_modes", 0) or 0),
+            "reducer": getattr(reducer, "training_metadata", None),
+            "surrogate": getattr(surrogate, "training_metadata", None),
+        }
+
+    def _write_metadata_sidecar(self, path: Path, metadata: dict[str, Any]) -> None:
+        """프로젝트 메타데이터 sidecar JSON을 기록한다."""
+        sidecar = path.with_suffix(".meta.json")
+        sidecar.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._log(f"✓ 메타데이터 저장: {sidecar}")
+
+    def _read_metadata_sidecar(self, path: Path) -> dict[str, Any] | None:
+        """프로젝트 메타데이터 sidecar JSON을 읽는다."""
+        sidecar = path.with_suffix(".meta.json")
+        if not sidecar.exists():
+            return None
+        try:
+            data = json.loads(sidecar.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                self._log(f"✓ 메타데이터 로드: {sidecar}")
+                return data
+        except Exception as exc:
+            self._log(f"[WARN] 메타데이터 로드 실패: {exc}")
+        return None
+
+    def _attach_project_metadata(self, metadata: dict[str, Any]) -> None:
+        """로드/저장된 메타데이터를 dataset/engine 객체에 부착한다."""
+        if self._dataset is not None:
+            try:
+                self._dataset.metadata["project_metadata"] = metadata
+            except Exception:
+                pass
+        if self._engine is not None:
+            try:
+                setattr(self._engine, "project_metadata", metadata)
+            except Exception:
+                pass
+
+    def _apply_loaded_metadata_to_dataset(self, metadata: dict[str, Any]) -> None:
+        """sidecar 메타데이터를 dataset 메타데이터에 반영한다."""
+        if self._dataset is not None:
+            try:
+                self._dataset.metadata["project_metadata"] = metadata
+            except Exception:
+                pass

@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import pyvista as pv
+    pass
 
 
 @dataclass
@@ -76,6 +76,84 @@ class CFDDataset:
     def n_cells(self) -> int:
         """메쉬의 셀 개수를 반환한다."""
         return int(self.mesh.n_cells)
+
+    def extract_field_snapshots(self, field_name: str) -> Any:
+        """필드명을 기준으로 (n_features, n_steps) 스냅샷 행렬을 추출한다.
+
+        다중 타임스텝 저장 형식이 명확하지 않은 경우 보수적으로 판단해
+        단일 스냅샷 (n_features, 1)로 폴백한다.
+
+        Args:
+            field_name: 추출할 필드 이름.
+
+        Returns:
+            shape = (n_features, n_steps) 의 ndarray.
+
+        Raises:
+            ValueError: 필드가 메쉬에 없는 경우.
+        """
+        import numpy as np
+
+        mesh = self.mesh
+        time_series_fields = self.metadata.get("time_series_fields")
+        if (
+            isinstance(time_series_fields, dict)
+            and field_name in time_series_fields
+        ):
+            arr = np.asarray(time_series_fields[field_name], dtype=float)
+            expected_per_step = self.n_points
+        elif field_name in mesh.point_data:
+            arr = np.asarray(mesh.point_data[field_name], dtype=float)
+            expected_per_step = self.n_points
+        elif field_name in mesh.cell_data:
+            arr = np.asarray(mesh.cell_data[field_name], dtype=float)
+            expected_per_step = self.n_cells
+        else:
+            raise ValueError(f"필드 '{field_name}'가 메쉬에 없습니다.")
+
+        n_steps = max(1, self.n_time_steps)
+        return self._reshape_snapshots(arr, expected_per_step, n_steps)
+
+    @staticmethod
+    def _reshape_snapshots(arr: Any, expected_per_step: int, n_steps: int) -> Any:
+        """필드 배열을 스냅샷 행렬로 변환한다."""
+        import numpy as np
+
+        arr = np.asarray(arr, dtype=float)
+        if n_steps <= 1:
+            return CFDDataset._to_single_snapshot(arr)
+
+        if arr.ndim == 1:
+            if expected_per_step > 0 and arr.size == expected_per_step * n_steps:
+                return arr.reshape(n_steps, expected_per_step).T
+            return arr.reshape(-1, 1)
+
+        if arr.ndim == 2:
+            if expected_per_step > 0 and arr.shape[0] == expected_per_step * n_steps:
+                reshaped = arr.reshape(n_steps, expected_per_step, arr.shape[1])
+                return np.linalg.norm(reshaped, axis=-1).T
+            return CFDDataset._to_single_snapshot(arr)
+
+        if arr.ndim == 3:
+            if (
+                arr.shape[0] == n_steps
+                and expected_per_step > 0
+                and arr.shape[1] == expected_per_step
+            ):
+                return np.linalg.norm(arr, axis=-1).T
+            return CFDDataset._to_single_snapshot(arr)
+
+        return CFDDataset._to_single_snapshot(arr)
+
+    @staticmethod
+    def _to_single_snapshot(arr: Any) -> Any:
+        """배열을 단일 스냅샷 (n_features, 1)로 변환한다."""
+        import numpy as np
+
+        arr = np.asarray(arr, dtype=float)
+        if arr.ndim > 1:
+            arr = np.linalg.norm(arr, axis=-1)
+        return arr.reshape(-1, 1)
 
 
 class BaseReader(ABC):

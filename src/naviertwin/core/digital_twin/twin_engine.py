@@ -128,6 +128,68 @@ class TwinEngine:
 
         self._is_fitted: bool = False
 
+    @classmethod
+    def from_fitted_components(
+        cls,
+        reducer: BaseReducer,
+        surrogate: BaseSurrogate,
+    ) -> "TwinEngine":
+        """학습 완료된 reducer/surrogate로 TwinEngine을 구성한다.
+
+        Args:
+            reducer: 이미 fit된 차원 축소기.
+            surrogate: 이미 fit된 surrogate.
+
+        Returns:
+            학습 완료 상태의 TwinEngine.
+
+        Raises:
+            RuntimeError: reducer 또는 surrogate가 학습되지 않은 경우.
+        """
+        if not getattr(reducer, "is_fitted", False):
+            raise RuntimeError("reducer가 fit되지 않았습니다.")
+        if not getattr(surrogate, "is_fitted", False):
+            raise RuntimeError("surrogate가 fit되지 않았습니다.")
+
+        n_modes = int(getattr(reducer, "n_components", 0))
+        if n_modes <= 0:
+            raise ValueError("reducer.n_components가 유효하지 않습니다.")
+        output_dim = int(getattr(surrogate, "output_dim", 0))
+        if output_dim > 0 and output_dim != n_modes:
+            raise ValueError(
+                "surrogate 출력 차원과 reducer 모드 수가 일치하지 않습니다: "
+                f"output_dim={output_dim}, n_modes={n_modes}"
+            )
+        reducer_meta = getattr(reducer, "training_metadata", None)
+        surrogate_meta = getattr(surrogate, "training_metadata", None)
+        if isinstance(reducer_meta, dict) and isinstance(surrogate_meta, dict):
+            reducer_dataset_id = reducer_meta.get("dataset_id")
+            surrogate_dataset_id = surrogate_meta.get("dataset_id")
+            if (
+                reducer_dataset_id is not None
+                and surrogate_dataset_id is not None
+                and reducer_dataset_id != surrogate_dataset_id
+            ):
+                raise ValueError(
+                    "reducer/surrogate가 서로 다른 dataset에서 학습되었습니다."
+                )
+            reducer_modes = int(reducer_meta.get("n_modes", n_modes))
+            surrogate_modes = int(surrogate_meta.get("n_modes", n_modes))
+            if reducer_modes != surrogate_modes:
+                raise ValueError(
+                    "reducer/surrogate의 모드 수 메타데이터가 일치하지 않습니다: "
+                    f"{reducer_modes} != {surrogate_modes}"
+                )
+
+        engine = cls()
+        engine.reducer = reducer
+        engine.surrogate = surrogate
+        engine.reducer_type = reducer.__class__.__name__.lower()
+        engine.surrogate_type = surrogate.__class__.__name__.lower()
+        engine.n_modes = n_modes
+        engine._is_fitted = True
+        return engine
+
     # ------------------------------------------------------------------
     # 학습
     # ------------------------------------------------------------------

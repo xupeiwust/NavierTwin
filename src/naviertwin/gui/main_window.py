@@ -18,10 +18,10 @@ Examples:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from naviertwin import __version__
 from naviertwin.gui.panels.analyze_panel import AnalyzePanel
 from naviertwin.gui.panels.export_panel import ExportPanel
 from naviertwin.gui.panels.import_panel import ImportPanel
@@ -66,6 +67,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("NavierTwin — CFD Digital Twin")
         self.setMinimumSize(1280, 800)
         self.resize(1440, 900)
+        self._latest_dataset: object | None = None
+        self._latest_reducer: object | None = None
+        self._latest_surrogate: object | None = None
+        self._latest_engine: object | None = None
 
         self._apply_theme()
         self._setup_panels()
@@ -159,7 +164,7 @@ class MainWindow(QMainWindow):
         self._progress_bar.setVisible(False)
         sb.addPermanentWidget(self._progress_bar)
 
-        version_label = QLabel("v1.0.0")
+        version_label = QLabel(f"v{__version__}")
         version_label.setObjectName("subtitleLabel")
         sb.addPermanentWidget(version_label)
 
@@ -174,10 +179,16 @@ class MainWindow(QMainWindow):
         # Model → Twin 패널에 surrogate 전달
         self._model_panel.model_trained.connect(self._on_model_trained)
 
+        # Analyze 완료 상태 업데이트
+        self._analyze_panel.analysis_done.connect(
+            lambda method, _: self._set_status(f"분석 완료 ({method})")
+        )
+
         # Export 완료 상태 업데이트
         self._export_panel.export_done.connect(
             lambda p: self._set_status(f"내보내기 완료: {p}")
         )
+        self._export_panel.project_loaded.connect(self._on_project_loaded)
 
         # Twin 예측 완료
         self._twin_panel.prediction_done.connect(
@@ -189,24 +200,67 @@ class MainWindow(QMainWindow):
     # ──────────────────────────────────────────────────────────────────
 
     def _on_dataset_loaded(self, dataset: object) -> None:
+        self._latest_dataset = dataset
+        self._latest_reducer = None
+        self._latest_surrogate = None
+        self._latest_engine = None
         self._set_status(
             f"데이터셋 로드 완료 — {dataset.n_points} pts, "  # type: ignore[union-attr]
             f"{dataset.n_cells} cells, {dataset.n_time_steps} steps"
         )
         self._analyze_panel.set_dataset(dataset)  # type: ignore[arg-type]
         self._reduce_panel.set_dataset(dataset)    # type: ignore[arg-type]
+        self._model_panel.set_dataset(dataset)     # type: ignore[arg-type]
         self._export_panel.set_dataset(dataset)    # type: ignore[arg-type]
         # Import 탭 완료 후 Analyze 탭으로 자동 이동
         self._tabs.setCurrentIndex(1)
 
     def _on_reduction_done(self, method: str, reducer: object) -> None:
+        self._latest_reducer = reducer
         self._set_status(f"차원 축소 완료 ({method})")
         self._model_panel.set_reducer(reducer)
+        artifact = self._reduce_panel.get_reduction_artifact()
+        if artifact is not None:
+            self._model_panel.set_reduction_artifact(artifact)
         self._tabs.setCurrentIndex(3)
 
     def _on_model_trained(self, model_type: str, surrogate: object) -> None:
-        self._set_status(f"모델 학습 완료 ({model_type})")
+        self._latest_surrogate = surrogate
+        if self._latest_reducer is not None:
+            try:
+                engine = self._build_engine(self._latest_reducer, surrogate)
+                self._latest_engine = engine
+                self._twin_panel.set_engine(engine)
+                self._export_panel.set_engine(engine)
+                self._set_status(f"모델 학습 완료 ({model_type}) — TwinEngine 연결 완료")
+            except Exception as exc:
+                self._set_status(f"모델 학습 완료 ({model_type}) — 엔진 구성 실패: {exc}")
+        else:
+            self._set_status(f"모델 학습 완료 ({model_type})")
         self._tabs.setCurrentIndex(4)
+
+    def _on_project_loaded(self, dataset: object, engine: object | None) -> None:
+        """Export 패널에서 로드한 프로젝트를 전체 워크플로우 상태로 복원한다."""
+        self._on_dataset_loaded(dataset)
+        if engine is not None:
+            self._latest_engine = engine
+            self._latest_reducer = getattr(engine, "reducer", self._latest_reducer)
+            self._latest_surrogate = getattr(engine, "surrogate", self._latest_surrogate)
+            if self._latest_reducer is not None:
+                self._model_panel.set_reducer(self._latest_reducer)
+            self._twin_panel.set_engine(engine)
+            self._export_panel.set_engine(engine)
+            self._set_status("프로젝트 로드 완료 (dataset + TwinEngine)")
+        else:
+            self._set_status("프로젝트 로드 완료 (dataset)")
+        loaded_meta = self._extract_project_metadata(dataset, engine)
+        self._model_panel.set_loaded_metadata(loaded_meta)
+
+    def _build_engine(self, reducer: object, surrogate: object) -> object:
+        """학습된 reducer/surrogate로 TwinEngine을 구성한다."""
+        from naviertwin.core.digital_twin.twin_engine import TwinEngine
+
+        return TwinEngine.from_fitted_components(reducer, surrogate)
 
     # ──────────────────────────────────────────────────────────────────
     # 메뉴 액션
@@ -240,7 +294,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "NavierTwin 정보",
-            "<h3>NavierTwin v1.0.0</h3>"
+            f"<h3>NavierTwin v{__version__}</h3>"
             "<p>CFD 후처리 결과를 AI/ROM 디지털 트윈으로 변환하는 오픈소스 툴.</p>"
             "<p>License: GPL-3.0</p>"
             "<p>Python 3.10+ | PySide6 | PyVista | PyTorch</p>",
@@ -252,6 +306,31 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, msg: str) -> None:
         self._status_label.setText(msg)
+
+    def _extract_project_metadata(
+        self, dataset: object, engine: object | None
+    ) -> dict[str, object]:
+        """복원용 프로젝트 메타데이터를 dataset 우선으로 추출한다."""
+        dataset_meta = getattr(dataset, "metadata", None)
+        if isinstance(dataset_meta, Mapping) and "project_metadata" in dataset_meta:
+            project_meta = dataset_meta.get("project_metadata")
+            normalized = self._normalize_project_metadata(project_meta)
+            if normalized or isinstance(project_meta, Mapping):
+                return normalized
+
+        engine_meta = getattr(engine, "project_metadata", None) if engine is not None else None
+        return self._normalize_project_metadata(engine_meta)
+
+    def _normalize_project_metadata(self, metadata: object) -> dict[str, object]:
+        """ModelPanel이 기대하는 dict[str, object] 형태로 정규화한다."""
+        if not isinstance(metadata, Mapping):
+            return {}
+
+        normalized: dict[str, object] = {}
+        for key, value in metadata.items():
+            if isinstance(key, str):
+                normalized[key] = value
+        return normalized
 
     def closeEvent(self, event: QCloseEvent) -> None:
         reply = QMessageBox.question(

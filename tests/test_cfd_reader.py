@@ -313,6 +313,21 @@ def test_ntwin_save_load_convenience(tmp_path: Path) -> None:
     assert len(loaded.time_steps) == 3
 
 
+def test_save_dataset_accepts_compression_keyword(tmp_path: Path) -> None:
+    """save_dataset(compression=...) 호출이 TypeError 없이 동작해야 한다."""
+    from naviertwin.core.cfd_reader.base import CFDDataset
+    from naviertwin.core.export.ntwin_format import load_dataset, save_dataset
+
+    mesh = _make_simple_ug()
+    dataset = CFDDataset(mesh=mesh, time_steps=[0.0], field_names=["U", "p"])
+    ntwin_path = tmp_path / "compressed.ntwin"
+
+    save_dataset(dataset, ntwin_path, compression="gzip")
+    loaded = load_dataset(ntwin_path)
+    assert loaded.n_points == dataset.n_points
+    assert "p" in loaded.field_names
+
+
 def test_ntwin_append_snapshot(tmp_path: Path) -> None:
     """append_snapshot 으로 타임스텝을 순차 추가할 수 있는지 검증한다."""
     from naviertwin.core.export.ntwin_format import NTwinReader, NTwinWriter
@@ -330,6 +345,182 @@ def test_ntwin_append_snapshot(tmp_path: Path) -> None:
 
     assert len(ts) == 3
     assert ts == pytest.approx(times)
+
+
+def test_load_dataset_preserves_multitimestep_snapshots(tmp_path: Path) -> None:
+    """append 기반 .ntwin 로드시 time-series 스냅샷이 보존되어야 한다."""
+    from naviertwin.core.export.ntwin_format import NTwinWriter, load_dataset
+
+    ntwin_path = tmp_path / "append_load.ntwin"
+    times = [0.0, 0.5, 1.0]
+    meshes = []
+    for i, _ in enumerate(times):
+        mesh = _make_simple_ug()
+        n = mesh.n_points
+        mesh.point_data["p"] = np.full((n,), i + 1, dtype=np.float32)
+        meshes.append(mesh)
+
+    with NTwinWriter(ntwin_path) as writer:
+        for mesh, t in zip(meshes, times):
+            writer.append_snapshot(mesh, t)
+
+    loaded = load_dataset(ntwin_path)
+    snapshots = loaded.extract_field_snapshots("p")
+    assert snapshots.shape[1] == len(times)
+    np.testing.assert_allclose(snapshots[:, 0], np.ones(loaded.n_points))
+    np.testing.assert_allclose(snapshots[:, 1], np.full((loaded.n_points,), 2.0))
+    np.testing.assert_allclose(snapshots[:, 2], np.full((loaded.n_points,), 3.0))
+
+
+def test_ntwin_append_snapshot_read_timestep_slices_point_data(tmp_path: Path) -> None:
+    """append_snapshot 후 read_timestep 이 타임스텝별 PointData를 슬라이스하는지 검증한다."""
+    from naviertwin.core.export.ntwin_format import NTwinReader, NTwinWriter
+
+    ntwin_path = tmp_path / "append_slices.ntwin"
+    times = [0.0, 0.5, 1.0]
+    meshes = []
+    for i, _ in enumerate(times):
+        mesh = _make_simple_ug()
+        n = mesh.n_points
+        mesh.point_data["p"] = np.full((n,), i + 1, dtype=np.float32)
+        mesh.point_data["U"] = np.full((n, 3), i + 10, dtype=np.float32)
+        meshes.append(mesh)
+
+    with NTwinWriter(ntwin_path) as writer:
+        for mesh, t in zip(meshes, times):
+            writer.append_snapshot(mesh, t)
+
+    with NTwinReader(ntwin_path) as reader:
+        for i in range(len(times)):
+            loaded = reader.read_timestep(i)
+            p = np.asarray(loaded.point_data["p"])
+            u = np.asarray(loaded.point_data["U"])
+            assert p.shape[0] == meshes[i].n_points
+            assert u.shape == (meshes[i].n_points, 3)
+            np.testing.assert_allclose(p, np.full_like(p, i + 1))
+            np.testing.assert_allclose(u, np.full_like(u, i + 10))
+
+
+def test_ntwin_reader_read_timestep_raises_on_numberofpoints_length_mismatch(
+    tmp_path: Path,
+) -> None:
+    """NumberOfPoints 길이와 time_steps 길이가 다르면 ValueError 가 발생해야 한다."""
+    from naviertwin.core.export.ntwin_format import NTwinReader, NTwinWriter
+
+    ntwin_path = tmp_path / "counts_mismatch.ntwin"
+    mesh = _make_simple_ug()
+    with NTwinWriter(ntwin_path) as writer:
+        writer.append_snapshot(mesh, 0.0)
+        writer.append_snapshot(mesh, 1.0)
+
+    with h5py.File(ntwin_path, "a") as f:
+        vtk_grp = f["VTKHDF"]
+        del vtk_grp["NumberOfPoints"]
+        vtk_grp.create_dataset(
+            "NumberOfPoints",
+            data=np.array([mesh.n_points, mesh.n_points, mesh.n_points], dtype=np.int64),
+        )
+
+    with NTwinReader(ntwin_path) as reader:
+        with pytest.raises(ValueError, match="NumberOfPoints 길이와 time_steps 길이"):
+            reader.read_timestep(1)
+
+
+def test_ntwin_reader_read_timestep_raises_on_truncated_appended_pointdata(
+    tmp_path: Path,
+) -> None:
+    """append된 PointData가 잘리면 이후 타임스텝 read_timestep 에서 ValueError 가 발생해야 한다."""
+    from naviertwin.core.export.ntwin_format import NTwinReader, NTwinWriter
+
+    ntwin_path = tmp_path / "truncated_pointdata.ntwin"
+    times = [0.0, 0.5, 1.0]
+    mesh = _make_simple_ug()
+
+    with NTwinWriter(ntwin_path) as writer:
+        for t in times:
+            writer.append_snapshot(mesh, t)
+
+    with h5py.File(ntwin_path, "a") as f:
+        pd_grp = f["VTKHDF/PointData"]
+        p_data = np.asarray(pd_grp["p"])
+        del pd_grp["p"]
+        pd_grp.create_dataset("p", data=p_data[:-2])
+
+    with NTwinReader(ntwin_path) as reader:
+        with pytest.raises(ValueError, match="PointData 길이가 타임스텝 슬라이스 범위"):
+            reader.read_timestep(2)
+
+
+def test_ntwin_reader_field_names_and_time_steps_fallbacks(tmp_path: Path) -> None:
+    """field_names/time_steps 메타데이터가 손상되어도 폴백이 동작하는지 검증한다."""
+    from naviertwin.core.export.ntwin_format import NTwinReader, NTwinWriter
+
+    ntwin_path = tmp_path / "fallbacks.ntwin"
+    mesh = _make_simple_ug()
+    with NTwinWriter(ntwin_path) as writer:
+        writer.append_snapshot(mesh, 0.0)
+
+    with h5py.File(ntwin_path, "a") as f:
+        nt_grp = f["NavierTwin"]
+        if "field_names" in nt_grp:
+            del nt_grp["field_names"]
+        nt_grp.create_dataset("field_names", data="{not-json")
+        if "time_steps" in nt_grp:
+            del nt_grp["time_steps"]
+
+    with NTwinReader(ntwin_path) as reader:
+        names = reader.field_names
+        ts = reader.time_steps
+
+    assert "U" in names
+    assert "p" in names
+    assert ts == [0.0]
+
+
+def test_ntwin_reader_field_names_json_object_falls_back_to_point_data(
+    tmp_path: Path,
+) -> None:
+    """field_names 가 JSON object 로 저장되면 PointData 키로 폴백해야 한다."""
+    from naviertwin.core.export.ntwin_format import NTwinReader, NTwinWriter
+
+    ntwin_path = tmp_path / "field_names_object_fallback.ntwin"
+    mesh = _make_simple_ug()
+    with NTwinWriter(ntwin_path) as writer:
+        writer.append_snapshot(mesh, 0.0)
+
+    with h5py.File(ntwin_path, "a") as f:
+        nt_grp = f["NavierTwin"]
+        if "field_names" in nt_grp:
+            del nt_grp["field_names"]
+        nt_grp.create_dataset("field_names", data=json.dumps({"U": 0, "p": 1}))
+
+    with NTwinReader(ntwin_path) as reader:
+        names = reader.field_names
+
+    assert set(names) == {"U", "p"}
+
+
+def test_ntwin_reader_time_steps_malformed_scalar_falls_back_to_zero(
+    tmp_path: Path,
+) -> None:
+    """time_steps 가 숫자로 변환 불가한 스칼라이면 [0.0] 으로 폴백해야 한다."""
+    from naviertwin.core.export.ntwin_format import NTwinReader, NTwinWriter
+
+    ntwin_path = tmp_path / "time_steps_scalar_fallback.ntwin"
+    mesh = _make_simple_ug()
+    with NTwinWriter(ntwin_path) as writer:
+        writer.append_snapshot(mesh, 0.0)
+
+    with h5py.File(ntwin_path, "a") as f:
+        nt_grp = f["NavierTwin"]
+        if "time_steps" in nt_grp:
+            del nt_grp["time_steps"]
+        nt_grp.create_dataset("time_steps", data="not-a-float")
+
+    with NTwinReader(ntwin_path) as reader:
+        ts = reader.time_steps
+
+    assert ts == [0.0]
 
 
 # ---------------------------------------------------------------------------

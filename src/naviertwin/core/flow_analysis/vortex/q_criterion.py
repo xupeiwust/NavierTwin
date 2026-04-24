@@ -90,7 +90,7 @@ def compute_q_criterion(
         return _compute_q_manual(mesh, velocity_name)
 
     # 속도 구배 텐서: shape (N, 9) → (N, 3, 3)
-    grad_key = f"gradient"
+    grad_key = "gradient"
     if grad_key not in grad_mesh.point_data:
         logger.warning("gradient 필드 없음. 수동 계산으로 전환.")
         return _compute_q_manual(mesh, velocity_name)

@@ -13,6 +13,8 @@ import numpy as np
 import pytest
 
 from naviertwin.core.digital_twin.twin_engine import TwinEngine
+from naviertwin.core.dimensionality_reduction.linear.pod import SnapshotPOD
+from naviertwin.core.surrogate.rbf_surrogate import RBFSurrogate
 from naviertwin.core.validation.metrics import (
     compute_all_metrics,
     max_error,
@@ -210,6 +212,35 @@ class TestTwinEngine:
         """지원되지 않는 surrogate_type 시 ValueError가 발생하는지 확인한다."""
         with pytest.raises(ValueError, match="surrogate_type"):
             TwinEngine(surrogate_type="unknown_surrogate")
+
+    def test_from_fitted_components(self, low_rank_problem: tuple) -> None:
+        """학습된 reducer/surrogate로 엔진을 조립할 수 있는지 확인한다."""
+        snapshots, params = low_rank_problem
+        reducer = SnapshotPOD(n_modes=4)
+        reducer.fit(snapshots)
+        coeffs = reducer.encode(snapshots)
+
+        surrogate = RBFSurrogate()
+        surrogate.fit(params, coeffs)
+
+        engine = TwinEngine.from_fitted_components(reducer, surrogate)
+        pred = engine.predict(params[:3])
+        assert pred.shape == (snapshots.shape[0], 3)
+
+    def test_from_fitted_components_metadata_mismatch(self, low_rank_problem: tuple) -> None:
+        """학습 메타데이터가 다르면 엔진 조립이 실패하는지 확인한다."""
+        snapshots, params = low_rank_problem
+        reducer = SnapshotPOD(n_modes=4)
+        reducer.fit(snapshots)
+        coeffs = reducer.encode(snapshots)
+        reducer.training_metadata = {"dataset_id": 1, "n_modes": 4}
+
+        surrogate = RBFSurrogate()
+        surrogate.fit(params, coeffs)
+        surrogate.training_metadata = {"dataset_id": 2, "n_modes": 4}
+
+        with pytest.raises(ValueError, match="서로 다른 dataset"):
+            TwinEngine.from_fitted_components(reducer, surrogate)
 
 
 # ---------------------------------------------------------------------------

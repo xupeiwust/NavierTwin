@@ -14,7 +14,17 @@ Marks:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
+
+# src 레이아웃 저장소에서 `pytest`를 루트에서 바로 실행해도
+# `naviertwin` 패키지를 import할 수 있도록 경로를 보정한다.
+_ROOT = Path(__file__).resolve().parents[1]
+_SRC = _ROOT / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -32,7 +42,6 @@ def pytest_configure(config: pytest.Config) -> None:
 from typing import Any
 
 import numpy as np
-import pytest
 
 
 class _FakeMeshData(dict):

@@ -39,6 +39,7 @@ class TwinPanel(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._engine: Optional[object] = None
+        self._external_engine_mode: bool = False
         self._n_params: int = 2
         self._param_spins: list[QDoubleSpinBox] = []
         self._setup_ui()
@@ -183,8 +184,52 @@ class TwinPanel(QWidget):
     def set_engine(self, engine: object) -> None:
         """외부에서 TwinEngine을 설정한다."""
         self._engine = engine
+        self._set_external_engine_mode(True)
         self._save_btn.setEnabled(True)
+        self._status_label.setText("TwinEngine 준비 완료.")
+        self._sync_engine_settings(engine)
+        # 학습된 surrogate 입력 차원에 맞춰 파라미터 입력 UI를 자동 동기화한다.
+        try:
+            surrogate = getattr(engine, "surrogate", None)
+            n_params = int(getattr(surrogate, "input_dim", 0))
+            if n_params > 0 and n_params != self._n_params_spin.value():
+                self._n_params_spin.setValue(n_params)
+        except Exception:
+            pass
         self._log(f"TwinEngine 설정: {type(engine).__name__}")
+
+    def _set_external_engine_mode(self, enabled: bool) -> None:
+        """외부에서 주입된 엔진 모드 여부를 설정한다."""
+        self._external_engine_mode = enabled
+        self._reducer_combo.setEnabled(not enabled)
+        self._surrogate_combo.setEnabled(not enabled)
+        self._n_modes_spin.setEnabled(not enabled)
+        self._demo_btn.setEnabled(not enabled)
+
+    def _sync_engine_settings(self, engine: object) -> None:
+        """외부 엔진의 설정값을 UI에 동기화한다."""
+        reducer_type = str(getattr(engine, "reducer_type", "")).lower()
+        surrogate_type = str(getattr(engine, "surrogate_type", "")).lower()
+        n_modes = int(getattr(engine, "n_modes", self._n_modes_spin.value()))
+
+        if reducer_type:
+            idx = self._reducer_combo.findText(reducer_type)
+            if idx < 0:
+                self._reducer_combo.addItem(reducer_type)
+                idx = self._reducer_combo.findText(reducer_type)
+            if idx >= 0:
+                self._reducer_combo.setCurrentIndex(idx)
+
+        if surrogate_type:
+            idx = self._surrogate_combo.findText(surrogate_type)
+            if idx < 0:
+                self._surrogate_combo.addItem(surrogate_type)
+                idx = self._surrogate_combo.findText(surrogate_type)
+            if idx >= 0:
+                self._surrogate_combo.setCurrentIndex(idx)
+
+        if n_modes > 0:
+            self._n_modes_spin.setValue(n_modes)
 
     # ──────────────────────────────────────────────────────────────────
     # 슬롯
@@ -205,6 +250,9 @@ class TwinPanel(QWidget):
 
     def _run_demo(self) -> None:
         """데모: 랜덤 데이터로 TwinEngine을 학습하고 예측한다."""
+        if self._external_engine_mode:
+            self._log("[WARN] 외부 엔진 모드에서는 데모 학습을 실행할 수 없습니다.")
+            return
         try:
             from naviertwin.core.digital_twin.twin_engine import TwinEngine
 
