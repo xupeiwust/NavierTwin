@@ -49,6 +49,14 @@ if _HAS_FASTAPI:
         max_iter: int = 10
         problem: str = "quadratic"
 
+    class LBMReq(BaseModel):
+        nx: int = 32
+        ny: int = 32
+        tau: float = 0.8
+        u_top: float = 0.05
+        n_steps: int = 200
+        record_every: int = 200
+
 
 def create_app() -> Any:
     """FastAPI app 팩토리."""
@@ -91,6 +99,22 @@ def create_app() -> Any:
             "n_modes": pod_obj.n_components,
             "singular_values": pod_obj.singular_values_.tolist(),
             "cumulative_energy": pod_obj.energy_ratio_.tolist(),
+        }
+
+    @app.post("/simulate/lbm_cavity")
+    def lbm_cavity(req: LBMReq = Body(...)) -> dict[str, Any]:
+        from naviertwin.core.solver_interfaces.lbm_d2q9 import LBMD2Q9
+
+        lbm = LBMD2Q9(nx=req.nx, ny=req.ny, tau=req.tau, u_top=req.u_top)
+        snaps = lbm.run(n_steps=req.n_steps, record_every=req.record_every)
+        last = snaps[-1]
+        return {
+            "n_snapshots": int(snaps.shape[0]),
+            "shape": list(snaps.shape),
+            "ux_max": float(last[..., 1].max()),
+            "ux_min": float(last[..., 1].min()),
+            "uy_max": float(last[..., 2].max()),
+            "rho_mean": float(last[..., 0].mean()),
         }
 
     @app.post("/optimize/bayesian")
