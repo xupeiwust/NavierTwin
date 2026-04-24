@@ -240,6 +240,84 @@ class VtkViewer(QWidget):
         if idx >= 0:
             self._field_combo.setCurrentIndex(idx)
 
+    def load_field_grid_2d(
+        self,
+        scalar_field: "object",
+        field_name: str = "value",
+    ) -> None:
+        """2D 스칼라 필드 (ny, nx) 또는 (nt, ny, nx) 를 구조격자로 표시.
+
+        시뮬레이션 패널에서 LBM/Burgers 결과를 연동하는 용도.
+        """
+        import numpy as np
+        if self._plotter is None:
+            return
+        try:
+            import pyvista as pv
+        except ImportError:
+            return
+
+        arr = np.asarray(scalar_field, dtype=np.float64)
+        if arr.ndim == 3:
+            snapshots = arr
+        elif arr.ndim == 2:
+            snapshots = arr[None, ...]
+        else:
+            return
+        nt, ny, nx = snapshots.shape
+
+        # 구조격자 생성
+        grid = pv.ImageData(
+            dimensions=(nx, ny, 1),
+            spacing=(1.0, 1.0, 1.0),
+            origin=(0.0, 0.0, 0.0),
+        )
+
+        # 스냅샷 시퀀스를 dataset 으로 래핑하여 슬라이더 동작
+        from naviertwin.core.cfd_reader.base import CFDDataset
+
+        ds = CFDDataset(
+            mesh=grid,
+            time_steps=list(range(nt)),
+            field_names=[field_name],
+            metadata={
+                "source": "simulation",
+                "time_series_fields": {
+                    field_name: snapshots.reshape(nt, nx * ny)
+                },
+            },
+        )
+        # 첫 스냅샷을 mesh point_data 로
+        grid.point_data[field_name] = snapshots[0].ravel(order="F")
+
+        self.load_dataset(ds)
+
+    def load_1d_trajectory(
+        self,
+        U: "object",
+        field_name: str = "u",
+    ) -> None:
+        """1D 시공간 궤적 (nt, nx) 를 2D ImageData 로 표시."""
+        import numpy as np
+        if self._plotter is None:
+            return
+        try:
+            import pyvista as pv
+        except ImportError:
+            return
+
+        arr = np.asarray(U, dtype=np.float64)
+        if arr.ndim != 2:
+            return
+        nt, nx = arr.shape
+        grid = pv.ImageData(
+            dimensions=(nx, nt, 1),
+            spacing=(1.0, 1.0, 1.0),
+            origin=(0.0, 0.0, 0.0),
+        )
+        grid.point_data[field_name] = arr.ravel(order="F")
+        self.load_mesh(grid, field_name=field_name)
+
     def clear(self) -> None:
         """뷰포트를 초기화한다."""
         if self._plotter is not None:

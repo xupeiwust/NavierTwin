@@ -241,6 +241,37 @@ class MainWindow(QMainWindow):
             lambda _: self._set_status("예측 완료")
         )
 
+        # Simulation 결과 → 상태바 + 전역 viewer 연동 훅
+        if self._simulation_panel is not None:
+            self._simulation_panel.simulation_done.connect(self._on_simulation_done)
+
+    # ------------------------------------------------------------------
+    def _on_simulation_done(self, kind: str, result: object) -> None:
+        """SimulationPanel 결과를 Twin 탭 VTK viewer 로 전달 (가능한 경우)."""
+        self._set_status(
+            f"시뮬레이션 완료: {kind} — {getattr(result, 'get', lambda *_: '')('summary', '')}"
+        )
+        # Twin 패널에 vtk_viewer 가 있으면 렌더 시도
+        viewer = None
+        for cand in (self._twin_panel, self._import_panel):
+            v = getattr(cand, "_viewer", None) or getattr(cand, "_vtk_viewer", None)
+            if v is not None:
+                viewer = v
+                break
+        if viewer is None:
+            return
+        try:
+            if kind == "lbm_cavity":
+                snaps = result.get("snapshots")  # (nt, ny, nx, 3)
+                if snaps is not None and hasattr(viewer, "load_field_grid_2d"):
+                    viewer.load_field_grid_2d(snaps[..., 1], field_name="ux")
+            elif kind == "burgers":
+                U = result.get("U")
+                if U is not None and hasattr(viewer, "load_1d_trajectory"):
+                    viewer.load_1d_trajectory(U, field_name="u")
+        except Exception:  # noqa: BLE001
+            pass
+
     # ──────────────────────────────────────────────────────────────────
     # 시그널 핸들러
     # ──────────────────────────────────────────────────────────────────
