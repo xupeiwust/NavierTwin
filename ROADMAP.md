@@ -2,7 +2,7 @@
 
 > Phase별 세부 태스크 체크리스트. 버전별 목표·범위·근거는 `PLAN.md` 참조.
 
-## 현재 단계: v1.1.0 — CFD I/O 확장 + 검증 강화
+## 현재 단계: v1.1.1 — v1.1.x 마감 (SU2 + 메쉬 툴 + 해석해 검증 + GUI)
 
 ---
 
@@ -57,18 +57,22 @@
 - [x] `installer/naviertwin.spec` — PyInstaller `--onedir` 설정
 - [x] `tests/test_reduction.py`, `tests/test_surrogate.py`, `tests/test_twin.py`
 
-### v1.1.0 — CFD I/O 확장 (3 리더) ✅ (부분 완료 — 3 리더 구현)
+### v1.1.0 — CFD I/O 확장 (3 리더) ✅
 - [x] `core/cfd_reader/fluent_reader.py` — `.cas/.dat` ASCII (pv.FluentReader → meshio → FluentASCIIParser, sibling .dat 자동 감지)
 - [x] `core/cfd_reader/cgns_reader.py` — CGNS (`pv.CGNSReader` → pyCGNS → h5py → meshio)
 - [x] `core/cfd_reader/gmsh_reader.py` — `.msh` v2.2/v4.1 (gmsh probe → meshio)
 - [x] `core/cfd_reader/_mesh_utils.py` — 공통 메쉬 변환 헬퍼
 - [x] `tests/test_cfd_io_expansion.py` — 26 테스트 (25 passed, 1 skipped/optional)
-- [ ] `core/cfd_reader/su2_reader.py` — SU2 Python Wrapper (v1.1.x)
-- [ ] `core/tools/mesh_generator.py` — 채널/실린더/익형 파라미터 메쉬 (Gmsh) (v1.1.x)
-- [ ] `core/tools/mesh_processor.py` — 단순화, 스무딩, 품질 검사 (PyMeshLab) (v1.1.x)
-- [ ] `core/validation/analytic_solutions.py` — Couette, Poiseuille (Dedalus) (v1.1.x)
-- [ ] 해석해 vs 수치해 자동 비교 GUI 패널 연동 (v1.1.x)
-- [ ] `tests/test_analytic.py` (v1.1.x)
+
+### v1.1.1 — SU2 + 메쉬 툴 + 해석해 검증 ✅
+- [x] `core/cfd_reader/su2_reader.py` — SU2 `.su2` (meshio → SU2ASCIIParser, sibling `.csv` 자동 병합)
+- [x] `core/tools/mesh_generator.py` — 채널/원통/NACA 익형 파라미터 메쉬 (Gmsh OCC)
+- [x] `core/tools/mesh_processor.py` — simplify/smooth (PyMeshLab) + quality_report (PyVista 폴백)
+- [x] `core/validation/analytic_solutions.py` — Couette / Poiseuille 2D / Poiseuille Pipe + Dedalus optional
+- [x] `core/validation/analytic_solutions.compare_against_analytic` + metrics 연동
+- [x] `gui/widgets/analytic_compare_widget.py` — Matplotlib 임베드 비교 시각화
+- [x] `gui/panels/analyze_panel.py` — "해석해 비교" 5번째 분석 탭
+- [x] `tests/test_su2_reader.py` (8 passed), `tests/test_mesh_tools.py` (6 passed), `tests/test_analytic.py` (7 passed, 1 optional skip)
 
 ### v1.2.0 — 비선형 차원축소 + SPOD + 고급 유동분석
 - [ ] `core/dimensionality_reduction/nonlinear/autoencoder.py` — AE (PyTorch)

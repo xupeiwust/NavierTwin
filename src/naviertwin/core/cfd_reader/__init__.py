@@ -9,6 +9,7 @@
     - :class:`FluentReader`: Ansys Fluent .cas/.dat 리더 (ASCII)
     - :class:`CGNSReader`: CGNS .cgns 리더
     - :class:`GmshReader`: Gmsh .msh 리더
+    - :class:`SU2Reader`: SU2 .su2 리더
 """
 
 from naviertwin.core.cfd_reader.base import BaseReader, CFDDataset
@@ -17,10 +18,11 @@ from naviertwin.core.cfd_reader.fluent_reader import FluentReader  # noqa: F401 
 from naviertwin.core.cfd_reader.gmsh_reader import GmshReader  # noqa: F401 — auto-register
 from naviertwin.core.cfd_reader.openfoam_reader import OpenFOAMReader
 from naviertwin.core.cfd_reader.reader_factory import ReaderFactory
+from naviertwin.core.cfd_reader.su2_reader import SU2Reader  # noqa: F401 — auto-register
 from naviertwin.core.cfd_reader.vtk_reader import VTKReader
 
 # VTKReader / OpenFOAMReader 는 @register 데코레이터가 없으므로 수동 등록
-# FluentReader / CGNSReader / GmshReader 는 @ReaderFactory.register 로 자동 등록됨
+# FluentReader / CGNSReader / GmshReader / SU2Reader 는 @ReaderFactory.register 로 자동 등록됨
 ReaderFactory.register(VTKReader)
 ReaderFactory.register(OpenFOAMReader)
 
@@ -33,4 +35,5 @@ __all__ = [
     "FluentReader",
     "CGNSReader",
     "GmshReader",
+    "SU2Reader",
 ]

@@ -74,6 +74,7 @@ class AnalyzePanel(QWidget):
             "λ₂ Criterion",
             "FFT / PSD",
             "y+ (Wall Units)",
+            "해석해 비교 (Analytic)",
         ])
         self._method_list.currentRowChanged.connect(self._on_method_selected)
         method_layout.addWidget(self._method_list)
@@ -92,6 +93,8 @@ class AnalyzePanel(QWidget):
         self._param_stack.addWidget(self._build_fft_params())
         # y+ 파라미터
         self._param_stack.addWidget(self._build_yplus_params())
+        # 해석해 비교 파라미터
+        self._param_stack.addWidget(self._build_analytic_params())
 
         param_layout.addWidget(self._param_stack)
         left_layout.addWidget(param_group)
@@ -118,12 +121,19 @@ class AnalyzePanel(QWidget):
         log_layout.addWidget(self._result_text)
         right_splitter.addWidget(log_group)
 
+        # 해석해 비교 시각화 위젯
+        from naviertwin.gui.widgets.analytic_compare_widget import (
+            AnalyticCompareWidget,
+        )
+        self._compare_widget = AnalyticCompareWidget()
+        right_splitter.addWidget(self._compare_widget)
+
         # 상태 레이블
         self._status_label = QLabel("데이터를 먼저 가져오세요.")
         self._status_label.setObjectName("subtitleLabel")
         right_splitter.addWidget(self._status_label)
 
-        right_splitter.setSizes([400, 40])
+        right_splitter.setSizes([200, 300, 40])
         layout.addWidget(right_splitter, stretch=1)
 
         self._method_list.setCurrentRow(0)
@@ -150,6 +160,57 @@ class AnalyzePanel(QWidget):
         combo = QComboBox()
         combo.addItems(["U", "p", "T"])
         form.addRow("필드:", combo)
+        return w
+
+    def _build_analytic_params(self) -> QWidget:
+        w = QWidget()
+        form = QFormLayout(w)
+        form.setContentsMargins(4, 4, 4, 4)
+
+        flow_combo = QComboBox()
+        flow_combo.setObjectName("analytic_flow_combo")
+        flow_combo.addItems(["Couette", "Poiseuille 2D", "Poiseuille Pipe"])
+        form.addRow("유동 유형:", flow_combo)
+
+        field_combo = QComboBox()
+        field_combo.setObjectName("analytic_field_combo")
+        field_combo.addItems(["U"])
+        form.addRow("비교 필드:", field_combo)
+
+        axis_combo = QComboBox()
+        axis_combo.setObjectName("analytic_axis_combo")
+        axis_combo.addItems(["y", "x", "z"])
+        form.addRow("샘플 축:", axis_combo)
+
+        # 공용 파라미터
+        param1 = QDoubleSpinBox()
+        param1.setObjectName("analytic_param1")
+        param1.setRange(-1e9, 1e9)
+        param1.setDecimals(6)
+        param1.setValue(1.0)
+        form.addRow("U_top / dp/dx:", param1)
+
+        mu_spin = QDoubleSpinBox()
+        mu_spin.setObjectName("analytic_mu")
+        mu_spin.setRange(1e-10, 1e6)
+        mu_spin.setDecimals(8)
+        mu_spin.setValue(1.0)
+        form.addRow("μ (Pa·s):", mu_spin)
+
+        h_spin = QDoubleSpinBox()
+        h_spin.setObjectName("analytic_h")
+        h_spin.setRange(1e-6, 1e6)
+        h_spin.setDecimals(6)
+        h_spin.setValue(1.0)
+        form.addRow("H / R (m):", h_spin)
+
+        n_spin = QDoubleSpinBox()
+        n_spin.setObjectName("analytic_n")
+        n_spin.setRange(5, 1000)
+        n_spin.setDecimals(0)
+        n_spin.setValue(50)
+        form.addRow("샘플 수:", n_spin)
+
         return w
 
     def _build_yplus_params(self) -> QWidget:
@@ -202,6 +263,14 @@ class AnalyzePanel(QWidget):
                 combo.clear()
                 combo.addItems(dataset.field_names)
 
+        # 해석해 비교 필드 콤보 업데이트
+        analytic_page = self._param_stack.widget(4)
+        if analytic_page is not None:
+            field_combo = analytic_page.findChild(QComboBox, "analytic_field_combo")
+            if field_combo is not None and dataset.field_names:
+                field_combo.clear()
+                field_combo.addItems(dataset.field_names)
+
     # ──────────────────────────────────────────────────────────────────
     # 슬롯
     # ──────────────────────────────────────────────────────────────────
@@ -213,12 +282,14 @@ class AnalyzePanel(QWidget):
         if self._dataset is None:
             return
         row = self._method_list.currentRow()
-        methods = ["q_criterion", "lambda2", "fft_psd", "yplus"]
+        methods = ["q_criterion", "lambda2", "fft_psd", "yplus", "analytic"]
         method = methods[row] if row >= 0 else "q_criterion"
         try:
             result = self._dispatch(method)
             self._result_text.append(f"[{method}] 완료\n{result}\n")
             self.analysis_done.emit(method, result)
+            if method == "analytic" and isinstance(result, dict):
+                self._compare_widget.update_result(result)
         except Exception as exc:
             self._result_text.append(f"[ERROR] {method}: {exc}\n")
 
@@ -235,7 +306,7 @@ class AnalyzePanel(QWidget):
             combo = page.findChild(QComboBox, "velocity_combo")
             vel = combo.currentText() if combo else "U"
             result_mesh = compute_q_criterion(mesh, vel)
-            vals = result_mesh.point_data.get("Q_criterion")
+            vals = result_mesh.point_data.get("Q-criterion")
             if vals is not None:
                 return f"Q range: [{vals.min():.4g}, {vals.max():.4g}]"
             return result_mesh
@@ -251,30 +322,37 @@ class AnalyzePanel(QWidget):
             return result_mesh
 
         elif method == "fft_psd":
+            import numpy as np
+
             from naviertwin.core.flow_analysis.statistics.fft_psd import (
                 compute_fft,
                 find_dominant_frequencies,
             )
-            import numpy as np
+
+            n_steps = int(self._dataset.n_time_steps)  # type: ignore[union-attr]
+            if n_steps <= 1:
+                return "FFT: time-series 데이터가 없어 실행할 수 없습니다."
 
             page = self._param_stack.widget(2)
             spins = page.findChildren(QDoubleSpinBox)
             dt = spins[0].value() if spins else 0.01
-            # 단순히 첫 번째 필드의 첫 번째 포인트 신호를 사용
             field = self._dataset.field_names[0] if self._dataset.field_names else None  # type: ignore[union-attr]
-            if field and field in mesh.point_data:
-                signal = mesh.point_data[field]
-                if signal.ndim > 1:
-                    signal = signal[:, 0]
-                signal = signal.astype(float)
+            if field:
+                snapshots = self._dataset.extract_field_snapshots(field)  # type: ignore[union-attr]
+                if snapshots.shape[1] <= 1:
+                    return "FFT: 현재 데이터 구조에서는 시계열을 복원할 수 없습니다."
+                signal = snapshots.mean(axis=0).astype(float)
+
                 freqs, amps = compute_fft(signal, dt)
                 peaks = find_dominant_frequencies(freqs, amps, n_peaks=3)
-                return f"Top frequencies: {[f'{f:.4g} Hz' for f in peaks]}"
+                peak_text = [f"{p['frequency']:.4g} Hz" for p in peaks]
+                return f"Top frequencies: {peak_text}"
             return "FFT: 필드 없음"
 
         elif method == "yplus":
-            from naviertwin.core.flow_analysis.boundary_layer.yplus import compute_yplus
             import numpy as np
+
+            from naviertwin.core.flow_analysis.boundary_layer.yplus import compute_yplus
 
             page = self._param_stack.widget(3)
             spins = page.findChildren(QDoubleSpinBox)
@@ -287,10 +365,58 @@ class AnalyzePanel(QWidget):
             wss_field = wss_combo.currentText() if wss_combo else "wallShearStress"
             if wss_field in mesh.point_data:
                 tau = mesh.point_data[wss_field]
-                if tau.ndim > 1:
-                    tau = np.linalg.norm(tau, axis=1)
-                yplus = compute_yplus(tau.astype(float), rho, nu, y_wall)
+                tau_arr = np.asarray(tau, dtype=float)
+                if tau_arr.ndim == 1:
+                    # 크기만 있는 경우에도 각 포인트별 전단응력으로 계산되도록 2D로 맞춘다.
+                    tau_arr = tau_arr[:, np.newaxis]
+                yplus = compute_yplus(
+                    tau_arr,
+                    rho,
+                    nu,
+                    np.full(tau_arr.shape[0], y_wall, dtype=float),
+                )
                 return f"y+ range: [{yplus.min():.4g}, {yplus.max():.4g}], mean={yplus.mean():.4g}"
             return "y+: 벽면 전단응력 필드 없음"
 
+        elif method == "analytic":
+            return self._run_analytic_compare(mesh)
+
         return "알 수 없는 분석 방법"
+
+    def _run_analytic_compare(self, mesh: object) -> object:
+        """해석해와 수치해를 비교하고 결과 dict 를 반환한다."""
+        import numpy as np
+
+        from naviertwin.core.validation.analytic_solutions import (
+            compare_against_analytic,
+            couette_flow,
+            poiseuille_flow_2d,
+            poiseuille_pipe,
+        )
+
+        page = self._param_stack.widget(4)
+        flow_combo: QComboBox = page.findChild(QComboBox, "analytic_flow_combo")
+        field_combo: QComboBox = page.findChild(QComboBox, "analytic_field_combo")
+        axis_combo: QComboBox = page.findChild(QComboBox, "analytic_axis_combo")
+        p1: QDoubleSpinBox = page.findChild(QDoubleSpinBox, "analytic_param1")
+        mu: QDoubleSpinBox = page.findChild(QDoubleSpinBox, "analytic_mu")
+        h: QDoubleSpinBox = page.findChild(QDoubleSpinBox, "analytic_h")
+        n: QDoubleSpinBox = page.findChild(QDoubleSpinBox, "analytic_n")
+
+        flow = flow_combo.currentText() if flow_combo else "Couette"
+        field = field_combo.currentText() if field_combo else "U"
+        axis = axis_combo.currentText() if axis_combo else "y"
+        param1_val = p1.value() if p1 else 1.0
+        mu_val = mu.value() if mu else 1.0
+        h_val = h.value() if h else 1.0
+        n_val = int(n.value()) if n else 50
+
+        coords = np.linspace(0.0, h_val, n_val)
+        if flow == "Couette":
+            sol = couette_flow(U_top=param1_val, H=h_val, y=coords)
+        elif flow == "Poiseuille 2D":
+            sol = poiseuille_flow_2d(dpdx=param1_val, mu=mu_val, H=h_val, y=coords)
+        else:  # Poiseuille Pipe
+            sol = poiseuille_pipe(dpdx=param1_val, mu=mu_val, R=h_val, r=coords)
+
+        return compare_against_analytic(mesh, sol, field_name=field, axis=axis)

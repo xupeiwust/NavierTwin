@@ -8,6 +8,14 @@
     - :func:`compute_all_metrics`: 모든 지표 일괄 계산
 """
 
+from naviertwin.core.validation.analytic_solutions import (
+    AnalyticSolution,
+    compare_against_analytic,
+    couette_flow,
+    poiseuille_flow_2d,
+    poiseuille_pipe,
+    spectral_poiseuille,
+)
 from naviertwin.core.validation.metrics import (
     compute_all_metrics,
     max_error,
@@ -22,4 +30,10 @@ __all__ = [
     "relative_l2_error",
     "max_error",
     "compute_all_metrics",
+    "AnalyticSolution",
+    "couette_flow",
+    "poiseuille_flow_2d",
+    "poiseuille_pipe",
+    "spectral_poiseuille",
+    "compare_against_analytic",
 ]
