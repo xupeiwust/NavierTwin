@@ -41,7 +41,7 @@ def haar_forward(
 
 def haar_inverse(coeffs: dict) -> NDArray[np.float64]:
     a = coeffs["approx"].copy()
-    for d in coeffs["details"][::-1]:  # coarse → fine
+    for d in coeffs["details"]:  # details[0]=coarsest
         up = np.zeros(2 * a.size)
         up[::2] = (a + d) / sqrt(2.0)
         up[1::2] = (a - d) / sqrt(2.0)
