@@ -10,7 +10,8 @@ class TestTL:
         from naviertwin.core.optimization.tangent_linear import directional_derivative
 
         def f(x):
-            return float(x[0] ** 2 + x[1] ** 2)
+            # complex-safe: return complex scalar (not cast to float)
+            return x[0] ** 2 + x[1] ** 2
 
         d = directional_derivative(f, np.array([1.0, 2.0]), np.array([1.0, 0.0]))
         assert abs(d - 2.0) < 1e-10
@@ -27,7 +28,7 @@ class TestTL:
         from naviertwin.core.optimization.tangent_linear import gradient_from_jvp
 
         def f(x):
-            return float(np.sum(x ** 3))
+            return np.sum(x ** 3)  # complex-safe
 
         g = gradient_from_jvp(f, np.array([1.0, 2.0, 3.0]))
         assert np.allclose(g, [3, 12, 27], atol=1e-10)
