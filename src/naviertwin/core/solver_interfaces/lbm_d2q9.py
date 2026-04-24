@@ -59,13 +59,14 @@ class LBMD2Q9:
         ux: NDArray[np.float64],
         uy: NDArray[np.float64],
     ) -> NDArray[np.float64]:
+        # Fully vectorized over 9 velocities via broadcasting
         usqr = ux ** 2 + uy ** 2
-        feq = np.zeros((9, self.ny, self.nx), dtype=np.float64)
-        for k in range(9):
-            cu = _CX[k] * ux + _CY[k] * uy
-            feq[k] = _W[k] * rho * (
-                1.0 + 3.0 * cu + 4.5 * cu ** 2 - 1.5 * usqr
-            )
+        cu = _CX[:, None, None] * ux[None, :, :] + _CY[:, None, None] * uy[None, :, :]
+        feq = (
+            _W[:, None, None]
+            * rho[None, :, :]
+            * (1.0 + 3.0 * cu + 4.5 * cu ** 2 - 1.5 * usqr[None, :, :])
+        )
         return feq
 
     def _stream(self) -> None:

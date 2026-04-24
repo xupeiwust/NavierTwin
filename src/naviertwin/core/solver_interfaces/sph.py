@@ -57,18 +57,19 @@ def sph_density_1d(
     masses: NDArray[np.float64],
     h: float,
 ) -> NDArray[np.float64]:
-    """각 입자의 SPH 밀도 ρ_i = Σ_j m_j W(|x_i - x_j|, h)."""
+    """각 입자의 SPH 밀도 ρ_i = Σ_j m_j W(|x_i - x_j|, h).
+
+    Vectorized: (N, N) 거리 행렬에 단일 kernel 호출 → O(N²) 메모리, 단일 GPU-친화.
+    """
     x = np.asarray(particles_x, dtype=np.float64).ravel()
     m = np.asarray(masses, dtype=np.float64).ravel()
     if x.size != m.size:
         raise ValueError("particles, masses 크기 불일치")
-    n = x.size
-    rho = np.zeros(n)
-    for i in range(n):
-        dr = x - x[i]
-        w = cubic_spline_kernel(dr, h, dim=1)
-        rho[i] = float(np.sum(m * w))
-    return rho
+    # dr[i, j] = x[j] - x[i]
+    dr = x[None, :] - x[:, None]
+    w = cubic_spline_kernel(dr, h, dim=1)  # (N, N)
+    # ρ_i = Σ_j m_j W(...)
+    return (w * m[None, :]).sum(axis=1)
 
 
 def sph_gradient_1d(
@@ -77,25 +78,28 @@ def sph_gradient_1d(
     masses: NDArray[np.float64],
     h: float,
 ) -> NDArray[np.float64]:
-    """SPH 경사 근사 ∇v_i ≈ Σ_j m_j (v_j - v_i) ∇W."""
+    """SPH 경사 근사 ∇v_i ≈ Σ_j m_j (v_j - v_i) ∇W.
+
+    Vectorized: (N, N) 거리/속도차 행렬 broadcasting → O(N²) 메모리, 루프 제거.
+    """
     x = np.asarray(particles_x, dtype=np.float64).ravel()
     v = np.asarray(values, dtype=np.float64).ravel()
     m = np.asarray(masses, dtype=np.float64).ravel()
-    n = x.size
-    grad = np.zeros(n)
-    # 수치적 ∇W (중심차분 approx, 1D 에서는 부호 함수와 결합)
-    for i in range(n):
-        dr = x - x[i]
-        # dW/dr 해석적: 기호 차분 (|r| cap 방지 위해 작은 epsilon)
-        s = np.abs(dr) / h
-        sig = _sigma(1) / h ** 2
-        dw = np.zeros_like(dr)
-        m1 = (s < 1.0) & (s > 0)
-        m2 = (s >= 1.0) & (s < 2.0)
-        dw[m1] = sig * (-3.0 * s[m1] + 2.25 * s[m1] ** 2) * np.sign(dr[m1])
-        dw[m2] = -sig * 0.75 * (2.0 - s[m2]) ** 2 * np.sign(dr[m2])
-        grad[i] = float(np.sum(m * (v - v[i]) * dw))
-    return grad
+
+    # dr[i, j] = x[j] - x[i]
+    dr = x[None, :] - x[:, None]
+    s = np.abs(dr) / h
+    sig = _sigma(1) / h ** 2
+
+    dw = np.zeros_like(dr)
+    m1 = (s < 1.0) & (s > 0)
+    m2 = (s >= 1.0) & (s < 2.0)
+    dw[m1] = sig * (-3.0 * s[m1] + 2.25 * s[m1] ** 2) * np.sign(dr[m1])
+    dw[m2] = -sig * 0.75 * (2.0 - s[m2]) ** 2 * np.sign(dr[m2])
+
+    # v_diff[i, j] = v[j] - v[i]
+    v_diff = v[None, :] - v[:, None]
+    return (m[None, :] * v_diff * dw).sum(axis=1)
 
 
 __all__ = ["cubic_spline_kernel", "sph_density_1d", "sph_gradient_1d"]
