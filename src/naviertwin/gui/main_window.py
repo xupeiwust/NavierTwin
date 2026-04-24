@@ -98,6 +98,11 @@ class MainWindow(QMainWindow):
         self._tabs.setDocumentMode(True)
         self._tabs.setTabPosition(QTabWidget.TabPosition.North)
 
+        # i18n translator — default ko
+        from naviertwin.utils.i18n import Translator
+
+        self._t = Translator(lang="ko")
+
         self._import_panel = ImportPanel()
         self._analyze_panel = AnalyzePanel()
         self._reduce_panel = ReducePanel()
@@ -105,14 +110,45 @@ class MainWindow(QMainWindow):
         self._twin_panel = TwinPanel()
         self._export_panel = ExportPanel()
 
-        self._tabs.addTab(self._import_panel,  "① Import")
-        self._tabs.addTab(self._analyze_panel, "② Analyze")
-        self._tabs.addTab(self._reduce_panel,  "③ Reduce")
-        self._tabs.addTab(self._model_panel,   "④ Model")
-        self._tabs.addTab(self._twin_panel,    "⑤ Twin")
-        self._tabs.addTab(self._export_panel,  "⑥ Export")
+        # 모델 비교 대시보드 탭
+        try:
+            from naviertwin.gui.widgets.model_compare_widget import ModelCompareWidget
+
+            self._compare_panel = ModelCompareWidget()
+        except Exception:  # noqa: BLE001
+            self._compare_panel = None
+
+        self._tabs.addTab(self._import_panel,  f"① {self._t('panel.import')}")
+        self._tabs.addTab(self._analyze_panel, f"② {self._t('panel.analyze')}")
+        self._tabs.addTab(self._reduce_panel,  f"③ {self._t('panel.reduce')}")
+        self._tabs.addTab(self._model_panel,   f"④ {self._t('panel.model')}")
+        self._tabs.addTab(self._twin_panel,    f"⑤ {self._t('panel.twin')}")
+        self._tabs.addTab(self._export_panel,  f"⑥ {self._t('panel.export')}")
+        if self._compare_panel is not None:
+            self._tabs.addTab(self._compare_panel, "⑦ Compare")
 
         vbox.addWidget(self._tabs)
+
+    def set_language(self, lang: str) -> None:
+        """런타임 언어 전환 (탭 제목만 갱신)."""
+        self._t.set_language(lang)
+        titles = [
+            ("panel.import", "①"),
+            ("panel.analyze", "②"),
+            ("panel.reduce", "③"),
+            ("panel.model", "④"),
+            ("panel.twin", "⑤"),
+            ("panel.export", "⑥"),
+        ]
+        for i, (key, num) in enumerate(titles):
+            self._tabs.setTabText(i, f"{num} {self._t(key)}")
+
+    def update_compare_dashboard(
+        self, results: dict[str, dict[str, float]]
+    ) -> None:
+        """외부에서 모델 비교 대시보드 갱신."""
+        if self._compare_panel is not None:
+            self._compare_panel.update(results)
 
     def _setup_menubar(self) -> None:
         mb: QMenuBar = self.menuBar()
