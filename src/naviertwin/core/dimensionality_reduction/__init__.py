@@ -9,3 +9,16 @@
 from naviertwin.core.dimensionality_reduction.base import BaseReducer
 
 __all__ = ["BaseReducer"]
+
+
+def __getattr__(name: str) -> object:
+    """Lazy import 비선형 reducer — PyTorch 없는 환경에서도 패키지 import 성공."""
+    if name == "Autoencoder":
+        from naviertwin.core.dimensionality_reduction.nonlinear.autoencoder import Autoencoder
+
+        return Autoencoder
+    if name == "VAE":
+        from naviertwin.core.dimensionality_reduction.nonlinear.vae import VAE
+
+        return VAE
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -2,7 +2,7 @@
 
 > Phase별 세부 태스크 체크리스트. 버전별 목표·범위·근거는 `PLAN.md` 참조.
 
-## 현재 단계: v1.1.1 — v1.1.x 마감 (SU2 + 메쉬 툴 + 해석해 검증 + GUI)
+## 현재 단계: v1.2.0 — 비선형 차원축소 + SPOD + 고급 유동분석 ✅
 
 ---
 
@@ -74,17 +74,17 @@
 - [x] `gui/panels/analyze_panel.py` — "해석해 비교" 5번째 분석 탭
 - [x] `tests/test_su2_reader.py` (8 passed), `tests/test_mesh_tools.py` (6 passed), `tests/test_analytic.py` (7 passed, 1 optional skip)
 
-### v1.2.0 — 비선형 차원축소 + SPOD + 고급 유동분석
-- [ ] `core/dimensionality_reduction/nonlinear/autoencoder.py` — AE (PyTorch)
-- [ ] `core/dimensionality_reduction/nonlinear/vae.py` — VAE (PyTorch)
-- [ ] `core/dimensionality_reduction/nonlinear/gnn_ae.py` — GNN-AE (PyTorch Geometric)
-- [ ] `core/flow_analysis/modal/spod.py` — SPOD (PySPOD)
-- [ ] `core/flow_analysis/statistics/wavelet.py` — 웨이블릿 분석
-- [ ] `core/flow_analysis/statistics/two_point_corr.py` — 난류 공간 상관
-- [ ] `core/flow_analysis/boundary_layer/boundary_layer.py` — δ, θ, H, Cf
-- [ ] `core/flow_analysis/thermofluids/nondim.py` — Nu, Re, Pr
-- [ ] `core/data_augmentation/augmentation.py` — 갈릴레이 불변성, 대칭 변환
-- [ ] `tests/test_nonlinear_reduction.py`
+### v1.2.0 — 비선형 차원축소 + SPOD + 고급 유동분석 ✅
+- [x] `core/dimensionality_reduction/nonlinear/autoencoder.py` — PyTorch AE (MSE + Adam)
+- [x] `core/dimensionality_reduction/nonlinear/vae.py` — β-VAE (reparameterization + ELBO + sample())
+- [x] `core/dimensionality_reduction/nonlinear/gnn_ae.py` — GNN-AE (torch_geometric GCNConv, optional)
+- [x] `core/flow_analysis/modal/spod.py` — Welch-block SPOD + PySPOD 백엔드 옵션
+- [x] `core/flow_analysis/statistics/wavelet.py` — CWT (PyWavelets) + STFT 폴백
+- [x] `core/flow_analysis/statistics/two_point_corr.py` — R(r) + 적분 길이 스케일
+- [x] `core/flow_analysis/boundary_layer/boundary_layer.py` — δ99, δ*, θ, H + Cf
+- [x] `core/flow_analysis/thermofluids/nondim.py` — Re / Pr / Nu / Pe / Gr / Ra
+- [x] `core/data_augmentation/augmentation.py` — 갈릴레이 shift, reflect, rotate_2d, scale, symmetric
+- [x] `tests/test_nonlinear_reduction.py` — 11 테스트 (AE/VAE/GNN-AE/SPOD/2pc/BL/nondim/aug) 전부 통과
 
 ---
 
