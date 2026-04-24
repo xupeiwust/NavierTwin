@@ -380,3 +380,26 @@
 26. Report (Jinja2 + weasyprint)
 27. API (FastAPI 5 엔드포인트)
 28. GUI (6 패널 + 6 위젯 + 위자드 + i18n + Compare 탭)
+
+---
+
+## 🎯 Round 47 Milestone (v4.2.47)
+
+- **409 passed / 4 skipped** tests (46 rounds 완료)
+- **70 commits, 223 src files, 59 test files, 4 examples**
+
+### 라운드 41-46 추가 산출물
+- **Round 41** — POD-Galerkin linear ROM with input matrix
+- **Round 42** — Langevin score-based sampler + Euler-Maruyama SDE
+- **Round 43** — Wasserstein 1D + MMD Gaussian + KL divergence
+- **Round 44** — Chebyshev spectral (Gauss-Lobatto + Trefethen D 행렬) + Lagrange
+- **Round 45** — Benchmark dataset catalog (Burgers/Heat/Cavity)
+- **Round 46** — SPH M4 cubic kernel (1/2/3D) + density/gradient
+
+### 추가 도메인
+29. **POD-Galerkin reduced dynamical system** (with input channel)
+30. **Langevin sampling + SDE integration**
+31. **Statistical distances** (W₁, MMD, KL)
+32. **Spectral methods** (Chebyshev + Lagrange)
+33. **Benchmark registries** (파라미터 가변 PDE 데이터셋)
+34. **SPH** (kernel, density, gradient)
