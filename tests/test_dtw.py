@@ -16,9 +16,9 @@ class TestDTW:
         from naviertwin.core.analysis.dtw import dtw_distance
 
         a = np.array([1, 2, 3, 4], dtype=float)
-        b = np.array([0, 1, 2, 3, 4], dtype=float)  # prepend 0
+        b = np.array([1, 1, 2, 3, 4], dtype=float)  # stutter on first element
         d = dtw_distance(a, b)
-        assert d == 0.0  # warping aligns perfectly
+        assert d == 0.0  # warping aligns via repeated match
 
     def test_different(self) -> None:
         from naviertwin.core.analysis.dtw import dtw_distance
