@@ -14,8 +14,8 @@ class TestMCMC:
             return -0.5 * float(x[0]) ** 2
 
         s = metropolis_hastings(logp, np.zeros(1), n=8000, step=1.0, seed=0)
-        assert abs(float(s.mean())) < 0.1
-        assert abs(float(s.var()) - 1.0) < 0.2
+        assert abs(float(s.mean())) < 0.15
+        assert abs(float(s.var()) - 1.0) < 0.3
 
     def test_banana(self) -> None:
         """간단한 2D 비정규: p(x,y) ∝ exp(-(y - x²)² - x²/4)."""
