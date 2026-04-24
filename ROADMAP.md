@@ -403,3 +403,22 @@
 32. **Spectral methods** (Chebyshev + Lagrange)
 33. **Benchmark registries** (파라미터 가변 PDE 데이터셋)
 34. **SPH** (kernel, density, gradient)
+
+---
+
+## 🏆 Round 50 Milestone (v4.2.50)
+
+- **416 passed / 4 skipped** tests
+- **74 commits / 225 src files / 61 test files / 4 examples**
+- **50 rounds 완료** (초기 목표 11 버전 + 추가 39 rounds 고도화)
+
+### 라운드 48-49 추가
+- **Round 48** — Deep Ritz solver (변분 에너지 최소화 PINN)
+- **Round 49** — FVM upwind + MUSCL-Hancock + minmod limiter + 질량 보존
+
+### 최종 도메인 총합
+35+ 독립 기술 도메인 + 4 엔드-투-엔드 예제 + GUI + REST API + CLI.
+초기 v1.1.0 단일 리더에서 시작해 **연구 플랫폼 + 실전 배포** 수준 도달.
+
+이 milestone 이후 기능 추가는 희귀 영역 (Mamba SSM / Firedrake 기반 Certified RB /
+Fortran pyPDAF) 이며, 일반 사용자에게는 현재 범위가 충분합니다.
