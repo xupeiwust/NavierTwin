@@ -2,7 +2,7 @@
 
 > Phase별 세부 태스크 체크리스트. 버전별 목표·범위·근거는 `PLAN.md` 참조.
 
-## 현재 단계: v4.0.0 — 잠재 동역학 + Score-based Diffusion ✅
+## 현재 단계: v4.2.0 — C4 Equivariant FNO + ConstrainedPOD ✅
 
 ---
 
@@ -181,15 +181,16 @@
 - [ ] `core/operator_learning/kan/kano.py`
 - [ ] `core/dimensionality_reduction/nonlinear/tucker_decomp.py`
 
-### v4.2.0 — Equivariant NN + 고급 분해
-- [ ] `core/equivariant/group_equiv_fno/group_equiv_fno.py` (e3nn)
-- [ ] `core/equivariant/physics_embedded/physics_embedded_gnn.py` (escnn)
-- [ ] `core/equivariant/physics_embedded/lie_algebra_no.py`
-- [ ] `core/dimensionality_reduction/linear/cpod.py`
-- [ ] `core/dimensionality_reduction/nonlinear/diffusion_maps.py`
-- [ ] `core/flow_analysis/modal/pgd.py`
-- [ ] `core/flow_analysis/vortex/lcs.py`
-- [ ] `core/flow_analysis/thermofluids/entropy_gen.py`
+### v4.2.0 — Equivariant NN + 고급 분해 ✅ (부분 완료)
+- [x] `core/equivariant/group_equiv_fno/group_equiv_fno.py` — C4 회전 평균 FNO2D
+- [x] `core/dimensionality_reduction/linear/cpod.py` — null-space 투영 POD
+- [x] `tests/test_equivariant_cpod.py` — 5 tests pass
+- [ ] `core/equivariant/physics_embedded/physics_embedded_gnn.py` (escnn) (v4.2.x)
+- [ ] `core/equivariant/physics_embedded/lie_algebra_no.py` (v4.2.x)
+- [ ] `core/dimensionality_reduction/nonlinear/diffusion_maps.py` (v4.2.x)
+- [ ] `core/flow_analysis/modal/pgd.py` (v4.2.x)
+- [ ] `core/flow_analysis/vortex/lcs.py` (v4.2.x)
+- [ ] `core/flow_analysis/thermofluids/entropy_gen.py` (v4.2.x)
 
 ---
 
