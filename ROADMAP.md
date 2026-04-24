@@ -2,7 +2,7 @@
 
 > Phase별 세부 태스크 체크리스트. 버전별 목표·범위·근거는 `PLAN.md` 참조.
 
-## 현재 단계: v3.0.0 — 데이터 동화 + UQ + 기본 최적화 ✅
+## 현재 단계: v3.1.0 — PINN + 물리 보정 + SINDy ✅
 
 ---
 
@@ -140,16 +140,16 @@
 - [ ] `core/optimization/surrogate_opt.py` (v3.0.x, NLopt)
 - [ ] `core/sensitivity/causal_analysis.py` (v3.0.x)
 
-### v3.1.0 — PINN + 물리 보정 + 방정식 발견
-- [ ] `core/physnemo/physnemo_wrapper.py` (NVIDIA PhysicsNEMO)
-- [ ] `core/physnemo/pina_wrapper.py` (PINA)
-- [ ] `core/physnemo/dd_pinn.py` — Domain Decomposition PINN
-- [ ] `core/physics_correction/physics_correction.py`
-- [ ] `core/physics_correction/hybrid_rom.py` — POD-Galerkin + NN
-- [ ] `core/flow_analysis/modal/sindy_wrapper.py` (PySINDy)
-- [ ] `core/explainability/symbolic_regression.py` (PySR, optional)
-- [ ] `core/multi_fidelity/multi_fidelity.py`
-- [ ] `tests/test_pinn.py`, `tests/test_correction.py`
+### v3.1.0 — PINN + 물리 보정 + 방정식 발견 ✅ (부분 완료)
+- [x] `core/physnemo/pina_wrapper.py` — PINNSolver (PINA-style, PyTorch 직접)
+- [x] `core/physics_correction/physics_correction.py` — 선형 제약 투영 + 질량 보존
+- [x] `core/physics_correction/hybrid_rom.py` — POD + NN 잔차 보정
+- [x] `core/flow_analysis/modal/sindy_wrapper.py` — STLSQ 자체 구현 + PySINDy 백엔드
+- [x] `tests/test_pinn_correction.py` — 7 tests (1D Poisson 수렴 포함)
+- [ ] `core/physnemo/physnemo_wrapper.py` (NVIDIA PhysicsNEMO, v3.1.x)
+- [ ] `core/physnemo/dd_pinn.py` — Domain Decomposition PINN (v3.1.x)
+- [ ] `core/explainability/symbolic_regression.py` (PySR, optional) (v3.1.x)
+- [ ] `core/multi_fidelity/multi_fidelity.py` (v3.1.x)
 
 ### v3.2.0 — GUI 완성 + 배포
 - [ ] `gui/wizard/tutorial_wizard.py`
