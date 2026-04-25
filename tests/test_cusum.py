@@ -1,0 +1,28 @@
+"""Round 428 — CUSUM."""
+
+from __future__ import annotations
+
+import numpy as np
+
+
+class TestCUSUM:
+    def test_detect_step(self) -> None:
+        from naviertwin.core.analysis.cusum import cusum_detect
+
+        rng = np.random.default_rng(0)
+        x = np.concatenate([
+            rng.normal(0, 1, 50),
+            rng.normal(3, 1, 50),
+        ])
+        idx = cusum_detect(x, threshold=3.0)
+        # detected somewhere after change point (=50)
+        assert 50 <= idx < 80
+
+    def test_no_change(self) -> None:
+        from naviertwin.core.analysis.cusum import cusum_detect
+
+        rng = np.random.default_rng(0)
+        x = rng.normal(0, 1, 50)
+        # mean=0, sigma=1; threshold high → unlikely
+        idx = cusum_detect(x, threshold=10.0, mean=0.0, sigma=1.0)
+        assert idx == -1
