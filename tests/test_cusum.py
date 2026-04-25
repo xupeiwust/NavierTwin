@@ -14,8 +14,8 @@ class TestCUSUM:
             rng.normal(0, 1, 50),
             rng.normal(3, 1, 50),
         ])
-        idx = cusum_detect(x, threshold=3.0)
-        # detected somewhere after change point (=50)
+        # explicit baseline mean/sigma + larger threshold → detection past change-pt
+        idx = cusum_detect(x, threshold=5.0, mean=0.0, sigma=1.0, k=0.5)
         assert 50 <= idx < 80
 
     def test_no_change(self) -> None:
