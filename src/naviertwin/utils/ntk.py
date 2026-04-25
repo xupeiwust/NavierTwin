@@ -29,7 +29,6 @@ def empirical_ntk(
     """K(x1, x2) = J(x1) J(x2)ᵀ via torch.autograd.functional.jacobian."""
     if not has_torch():
         raise ImportError("torch not installed")
-    import torch
     from torch.autograd.functional import jacobian
 
     def f1(p):
