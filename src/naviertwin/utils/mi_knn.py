@@ -25,7 +25,6 @@ def _entropy_knn(x: NDArray, k: int = 3) -> float:
         diffs = np.sort(np.abs(x - x[i]))
         d[i] = diffs[k] if k < n else diffs[-1]
     d = np.maximum(d, 1e-12)
-    from math import log
     return float(np.mean(np.log(2 * d)) + np.log(n - 1) - np.log(k) + 0.5772)
 
 
