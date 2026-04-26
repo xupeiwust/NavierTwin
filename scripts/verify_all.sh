@@ -10,9 +10,8 @@ cd "$ROOT"
 ART="verify_artifacts"
 mkdir -p "$ART"
 
-echo "=== L1a: ruff lint ==="
-ruff check src/ tests/ > "$ART/ruff_raw.txt" 2>&1 \
-    || echo "WARN: ruff reported issues (see $ART/ruff_raw.txt)"
+echo "=== L1a: ruff lint (strict gate) ==="
+ruff check src/ tests/ | tee "$ART/ruff_raw.txt"
 
 echo "=== L1b: unit tests ==="
 UNIT_OUT="$ART/unit_raw.txt"
