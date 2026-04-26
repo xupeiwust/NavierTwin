@@ -25,12 +25,29 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]" numpy h5py scikit-learn
+          python -m pip install -e ".[dev]" numpy h5py scikit-learn pytest-cov pip-audit bandit
+
+      - name: Lint (ruff)
+        run: ruff check src/ tests/
 
       - name: CLI smoke test
         run: |
           python3 main.py --help
           python3 -m naviertwin.main --help
 
-      - name: Run tests (core suite)
-        run: pytest -q -m "not optional"
+      - name: Run tests (core suite + coverage)
+        run: |
+          pytest -q -m "not optional" \
+            --cov=src/naviertwin --cov-report=term-missing
+
+      - name: Code verification (MMS + convergence)
+        run: pytest tests/integration/test_mms_convergence.py -v -m convergence
+
+      - name: Validation benchmarks (V&V20)
+        run: pytest tests/integration/test_vv_benchmarks.py -v -m vv
+
+      - name: Security scan (pip-audit)
+        run: pip-audit || echo "pip-audit reported issues (non-blocking)"
+
+      - name: Static security (bandit)
+        run: bandit -r src/naviertwin -x tests || echo "bandit reported issues (non-blocking)"
