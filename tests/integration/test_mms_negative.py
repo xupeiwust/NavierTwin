@@ -12,7 +12,6 @@ import pytest
 
 from naviertwin.core.verification.loglog_slope import slope_fit
 
-
 pytestmark = pytest.mark.convergence
 
 
