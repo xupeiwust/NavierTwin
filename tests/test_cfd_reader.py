@@ -93,7 +93,6 @@ def test_cfd_dataset_none_mesh_raises() -> None:
 
 def test_vtk_reader_with_pyvista(tmp_path: Path) -> None:
     """VTKReader 가 임시 .vtu 파일을 올바르게 읽는지 검증한다."""
-    import pyvista as pv
     from naviertwin.core.cfd_reader.vtk_reader import VTKReader
 
     mesh = _make_simple_ug()
@@ -134,6 +133,7 @@ def test_vtk_reader_unsupported_extension(tmp_path: Path) -> None:
 def test_vtk_reader_stl(tmp_path: Path) -> None:
     """VTKReader 가 .stl 파일을 읽을 수 있는지 검증한다."""
     import pyvista as pv
+
     from naviertwin.core.cfd_reader.vtk_reader import VTKReader
 
     sphere = pv.Sphere()
@@ -153,7 +153,6 @@ def test_vtk_reader_stl(tmp_path: Path) -> None:
 
 def test_reader_factory_vtk(tmp_path: Path) -> None:
     """ReaderFactory 가 .vtu 경로에 대해 VTKReader 를 선택하는지 검증한다."""
-    import pyvista as pv
     from naviertwin.core.cfd_reader.reader_factory import ReaderFactory
     from naviertwin.core.cfd_reader.vtk_reader import VTKReader
 
@@ -167,9 +166,8 @@ def test_reader_factory_vtk(tmp_path: Path) -> None:
 
 def test_reader_factory_create_and_read(tmp_path: Path) -> None:
     """ReaderFactory.create_and_read 가 CFDDataset 을 반환하는지 검증한다."""
-    import pyvista as pv
-    from naviertwin.core.cfd_reader.reader_factory import ReaderFactory
     from naviertwin.core.cfd_reader.base import CFDDataset
+    from naviertwin.core.cfd_reader.reader_factory import ReaderFactory
 
     mesh = _make_simple_ug()
     vtu_path = tmp_path / "test.vtu"

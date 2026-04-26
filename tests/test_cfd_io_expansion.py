@@ -162,7 +162,6 @@ class TestFluentReader:
 
     def test_fluent_missing_dat_warns(self, tmp_path: Path) -> None:
         """sibling .dat 가 없을 때 warning 로그가 출력돼야 한다."""
-        import logging
 
         import meshio as meshio_mod
 

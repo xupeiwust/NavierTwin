@@ -13,7 +13,6 @@ import pytest
 from naviertwin.core.dimensionality_reduction.linear.pod import SnapshotPOD
 from naviertwin.core.dimensionality_reduction.linear.randomized_svd import RandomizedPOD
 
-
 # ---------------------------------------------------------------------------
 # 공통 픽스처
 # ---------------------------------------------------------------------------

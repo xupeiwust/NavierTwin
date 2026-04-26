@@ -39,7 +39,6 @@ def pytest_configure(config: pytest.Config) -> None:
         "slow: 실행 시간이 긴 테스트",
     )
 
-from typing import Any
 
 import numpy as np
 

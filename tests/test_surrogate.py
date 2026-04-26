@@ -13,7 +13,6 @@ import pytest
 from naviertwin.core.surrogate.kriging_surrogate import KrigingSurrogate
 from naviertwin.core.surrogate.rbf_surrogate import RBFSurrogate
 
-
 # ---------------------------------------------------------------------------
 # 공통 픽스처
 # ---------------------------------------------------------------------------

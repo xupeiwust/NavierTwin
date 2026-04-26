@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
-
 
 class TestSIMP:
     def test_volume_constraint(self) -> None:
