@@ -47,7 +47,8 @@ def _build_library(
     Ux = _derivative(U, axis=1, d=dx, order=1)
     Uxx = _derivative(U, axis=1, d=dx, order=2)
 
-    flat = lambda A: A.ravel()
+    def flat(A):
+        return A.ravel()
     cols = {
         "1": np.ones(T * N),
         "U": flat(U),

@@ -74,7 +74,7 @@ class DiffusionMaps:
         K = K / np.outer(q, q)
 
         d = K.sum(axis=1)
-        P = K / d[:, None]
+        # P = K / d[:, None]  (symmetrized via A below)
 
         # 비대칭 P 의 상위 고유쌍 — 대칭화 A = D^{-1/2} K D^{-1/2}
         d_sqrt = np.sqrt(d)

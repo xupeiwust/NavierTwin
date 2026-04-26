@@ -60,7 +60,7 @@ class TestCallbackManager:
 
         es = EarlyStopping(patience=2, min_delta=0.0)
         log = LossLogger()
-        mgr = CallbackManager([log, es])
+        _ = CallbackManager([log, es])  # constructed for side-effect coverage
 
         def loop(ep: int) -> dict:
             return {"loss": 1.0}

@@ -167,12 +167,12 @@ class OpenFOAMReader(BaseReader):
             ImportError: ofpp 가 설치되어 있지 않은 경우.
         """
         try:
-            import ofpp  # type: ignore[import-untyped]
+            import ofpp  # type: ignore[import-untyped]  # noqa: F401  (availability probe)
         except ImportError as exc:
             raise ImportError("ofpp 가 설치되어 있지 않습니다.") from exc
 
         try:
-            import numpy as np
+            import numpy as np  # noqa: F401  (availability probe)
             import pyvista as pv
         except ImportError as exc:
             raise ImportError(

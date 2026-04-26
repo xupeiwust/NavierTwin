@@ -24,9 +24,9 @@ logger = get_logger(__name__)
 
 def _power_iter(X: NDArray[np.float64], n_iter: int, tol: float) -> tuple:
     """3D 텐서의 rank-1 근사."""
-    I, J, K = X.shape
+    nI, J, K = X.shape
     rng = np.random.default_rng(0)
-    F = rng.standard_normal(I)
+    F = rng.standard_normal(nI)
     G = rng.standard_normal(J)
     H = rng.standard_normal(K)
     prev_norm = np.inf

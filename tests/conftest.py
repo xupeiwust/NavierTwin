@@ -40,7 +40,7 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
-import numpy as np
+import numpy as np  # noqa: E402  (intentionally after pytest_configure)
 
 
 class _FakeMeshData(dict):

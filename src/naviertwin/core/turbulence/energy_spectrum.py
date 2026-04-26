@@ -26,7 +26,6 @@ def energy_spectrum_1d(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """1D 시그널 u(x) 의 1D 에너지 스펙트럼 E(k) = |û(k)|²."""
     u = np.asarray(u, dtype=np.float64).ravel()
-    N = u.size
     U = np.fft.rfft(u, norm="forward")
     E = np.abs(U) ** 2
     k = np.arange(E.size)

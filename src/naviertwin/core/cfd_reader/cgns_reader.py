@@ -201,7 +201,7 @@ def _cgns_tree_to_cfd_dataset(tree: Any, source_file: str = "") -> CFDDataset:
         """CGNS 트리를 재귀 탐색한다."""
         if not isinstance(node, (list, tuple)) or len(node) < 4:
             return
-        name, value, children, ntype = node[0], node[1], node[2], node[3]
+        children, ntype = node[2], node[3]
 
         if ntype == "GridCoordinates_t":
             for child in children:

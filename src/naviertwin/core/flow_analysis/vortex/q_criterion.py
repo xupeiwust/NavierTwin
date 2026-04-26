@@ -58,7 +58,7 @@ def compute_q_criterion(
     """
     try:
         import numpy as np
-        import pyvista as pv
+        import pyvista as pv  # noqa: F401  (availability probe)
     except ImportError as exc:
         raise ImportError(
             "Q-criterion 계산에는 pyvista 와 numpy 가 필요합니다.\n"

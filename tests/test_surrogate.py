@@ -108,7 +108,7 @@ class TestRBFSurrogate:
 
         rbf = RBFSurrogate()
         rbf.fit(X, y)
-        y_pred = rbf.predict(X)
+        _ = rbf.predict(X)  # smoke
 
         # 학습 데이터 자체에 대한 R²는 1에 가까워야 함
         r2 = rbf.score(X, y)

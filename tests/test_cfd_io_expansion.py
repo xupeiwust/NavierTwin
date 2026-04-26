@@ -155,7 +155,7 @@ class TestFluentReader:
         with patch("pyvista.FluentReader", side_effect=raise_for_pv):
             with patch("meshio.read", side_effect=mock_read):
                 reader = FluentReader()
-                dataset = reader.read(CAS_PATH)
+                _ = reader.read(CAS_PATH)
 
         # .cas 와 .dat 둘 다 읽혔어야 함
         assert call_count["n"] >= 2, "sibling .dat 가 로드되지 않음"
@@ -185,7 +185,7 @@ class TestFluentReader:
                 with patch(
                     "naviertwin.core.cfd_reader.fluent_reader.logger"
                 ) as mock_log:
-                    dataset = reader.read(cas_only)
+                    _ = reader.read(cas_only)
                     # .dat 없음 → warning 로그가 호출돼야 함
                     assert mock_log.warning.called
 
@@ -300,7 +300,7 @@ class TestCGNSReader:
                                 field_names=[],
                                 metadata={},
                             )
-                            dataset = reader.read(CGNS_PATH)
+                            _ = reader.read(CGNS_PATH)
                             assert mock_m.called
 
     def test_cgns_h5py_fallback(self) -> None:
@@ -342,7 +342,7 @@ class TestCGNSReader:
             with patch.object(reader, "_read_with_pycgns", side_effect=raise_always):
                 with patch.object(reader, "_read_with_h5py", side_effect=raise_always):
                     with patch.object(reader, "_read_with_meshio", return_value=fake_result) as mock_m:
-                        dataset = reader.read(CGNS_PATH)
+                        _ = reader.read(CGNS_PATH)
                         assert mock_m.called
 
     def test_cgns_all_parsers_fail_raises(self) -> None:
@@ -474,7 +474,7 @@ class TestGmshReader:
     @pytest.mark.optional
     def test_gmsh_api_probe(self) -> None:
         """gmsh Python API 가 설치된 경우 probe 가 성공해야 한다."""
-        gmsh = pytest.importorskip("gmsh", reason="gmsh API 가 필요합니다")
+        pytest.importorskip("gmsh", reason="gmsh API 가 필요합니다")
         from naviertwin.core.cfd_reader.gmsh_reader import _gmsh_probe
 
         # probe 가 예외 없이 완료되어야 함
