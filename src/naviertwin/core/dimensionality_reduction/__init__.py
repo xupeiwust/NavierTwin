@@ -4,11 +4,27 @@
 
 공개 API:
     - :class:`BaseReducer`: 차원 축소기 추상 기반 클래스
+    - :class:`SnapshotPOD`: SVD 기반 스냅샷 POD
+    - :class:`RandomizedPOD`: Randomized SVD 기반 고속 POD
+    - :class:`IncrementalPOD`: 스트리밍(온라인) POD
+    - :class:`MRPOD`: 다중 해상도 POD
 """
 
 from naviertwin.core.dimensionality_reduction.base import BaseReducer
+from naviertwin.core.dimensionality_reduction.linear import (
+    MRPOD,
+    IncrementalPOD,
+    RandomizedPOD,
+    SnapshotPOD,
+)
 
-__all__ = ["BaseReducer"]
+__all__ = [
+    "BaseReducer",
+    "SnapshotPOD",
+    "RandomizedPOD",
+    "IncrementalPOD",
+    "MRPOD",
+]
 
 
 def __getattr__(name: str) -> object:

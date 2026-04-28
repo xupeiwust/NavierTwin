@@ -3,13 +3,17 @@
 공개 API:
     - :class:`SnapshotPOD`: SVD 기반 스냅샷 POD
     - :class:`RandomizedPOD`: Randomized SVD 기반 고속 POD
+    - :class:`IncrementalPOD`: 스트리밍(온라인) POD
+    - :class:`MRPOD`: 다중 해상도 POD
 
 구현 예정:
     - Certified Reduced Basis
     - CPOD
 """
 
+from naviertwin.core.dimensionality_reduction.linear.incremental_pod import IncrementalPOD
+from naviertwin.core.dimensionality_reduction.linear.mrpod import MRPOD
 from naviertwin.core.dimensionality_reduction.linear.pod import SnapshotPOD
 from naviertwin.core.dimensionality_reduction.linear.randomized_svd import RandomizedPOD
 
-__all__ = ["SnapshotPOD", "RandomizedPOD"]
+__all__ = ["SnapshotPOD", "RandomizedPOD", "IncrementalPOD", "MRPOD"]
