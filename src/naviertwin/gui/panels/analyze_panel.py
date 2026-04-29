@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QPushButton,
+    QSpinBox,
     QSplitter,
     QStackedWidget,
     QTextEdit,
@@ -36,6 +37,7 @@ _ANALYSIS_METHODS: list[tuple[str, str]] = [
     ("y+ (Wall Units)", "yplus"),
     ("해석해 비교 (Analytic)", "analytic"),
     ("SPOD (Modal)", "spod"),
+    ("SINDy (Equation Discovery)", "sindy"),
     ("Wavelet / STFT", "wavelet"),
     ("Boundary Layer Thickness", "boundary_layer"),
     ("Nondimensional Numbers", "nondim"),
@@ -112,6 +114,7 @@ class AnalyzePanel(QWidget):
         self._param_stack.addWidget(self._build_analytic_params())
         # 고급 분석 quick diagnostics
         self._param_stack.addWidget(self._build_info_params("SPOD는 첫 번째 시계열 필드로 실행합니다."))
+        self._param_stack.addWidget(self._build_sindy_params())
         self._param_stack.addWidget(self._build_info_params("Wavelet/STFT는 대표 신호를 시간-주파수로 분석합니다."))
         self._param_stack.addWidget(self._build_info_params("경계층 두께는 y 좌표와 첫 번째 속도 필드 프로파일을 사용합니다."))
         self._param_stack.addWidget(self._build_info_params("무차원수는 표준 공기/길이 기본값으로 계산합니다."))
@@ -277,6 +280,27 @@ class AnalyzePanel(QWidget):
         layout.addStretch()
         return w
 
+    def _build_sindy_params(self) -> QWidget:
+        w = QWidget()
+        form = QFormLayout(w)
+        form.setContentsMargins(4, 4, 4, 4)
+
+        degree_spin = QSpinBox()
+        degree_spin.setObjectName("sindy_degree")
+        degree_spin.setRange(1, 5)
+        degree_spin.setValue(2)
+        form.addRow("Polynomial degree:", degree_spin)
+
+        threshold_spin = QDoubleSpinBox()
+        threshold_spin.setObjectName("sindy_threshold")
+        threshold_spin.setRange(0.0, 10.0)
+        threshold_spin.setDecimals(4)
+        threshold_spin.setSingleStep(0.01)
+        threshold_spin.setValue(0.05)
+        form.addRow("Threshold:", threshold_spin)
+
+        return w
+
     # ──────────────────────────────────────────────────────────────────
     # 공개 API
     # ──────────────────────────────────────────────────────────────────
@@ -416,6 +440,9 @@ class AnalyzePanel(QWidget):
         elif method == "spod":
             return self._run_spod()
 
+        elif method == "sindy":
+            return self._run_sindy()
+
         elif method == "wavelet":
             return self._run_wavelet()
 
@@ -490,6 +517,35 @@ class AnalyzePanel(QWidget):
         return (
             f"SPOD: n_freq={len(result['frequencies'])}, "
             f"n_modes={eig.shape[1]}, leading_energy={eig[0, 0]:.4g}"
+        )
+
+    def _run_sindy(self) -> str:
+        """대표 시계열 신호로 SINDy equation discovery를 실행한다."""
+        import numpy as np
+
+        from naviertwin.core.flow_analysis.modal.sindy_wrapper import SINDy
+
+        signal = np.asarray(self._representative_signal(), dtype=float).ravel()
+        if signal.size < 5:
+            return "SINDy: 최소 5개 이상의 시간 샘플이 필요합니다."
+
+        page = self._param_stack.widget(self._method_index("sindy"))
+        degree: QSpinBox = page.findChild(QSpinBox, "sindy_degree")
+        threshold: QDoubleSpinBox = page.findChild(QDoubleSpinBox, "sindy_threshold")
+        poly_degree = degree.value() if degree else 2
+        threshold_value = threshold.value() if threshold else 0.05
+
+        model = SINDy(poly_degree=poly_degree, threshold=threshold_value)
+        model.fit(signal.reshape(-1, 1), dt=self._time_step())
+        equations = model.equations()
+        normalized = [
+            eq if eq.startswith("dx") else f"dx{i}/dt = {eq}"
+            for i, eq in enumerate(equations)
+        ]
+        return (
+            "SINDy: "
+            f"degree={poly_degree}, threshold={threshold_value:.4g}, "
+            f"equations={'; '.join(normalized)}"
         )
 
     def _run_wavelet(self) -> str:

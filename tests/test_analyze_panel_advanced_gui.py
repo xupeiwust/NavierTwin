@@ -48,6 +48,7 @@ def test_analyze_panel_lists_advanced_customer_diagnostics(qtbot) -> None:
     labels = analysis_method_labels()
     for label in [
         "SPOD (Modal)",
+        "SINDy (Equation Discovery)",
         "Wavelet / STFT",
         "Boundary Layer Thickness",
         "Nondimensional Numbers",
@@ -68,6 +69,7 @@ def test_advanced_analyze_dispatch_runs_core_functions(qtbot) -> None:
 
     expected_tokens = {
         "spod": "SPOD:",
+        "sindy": "SINDy:",
         "wavelet": "STFT:",
         "boundary_layer": "Boundary Layer:",
         "nondim": "Nondim:",
@@ -78,3 +80,36 @@ def test_advanced_analyze_dispatch_runs_core_functions(qtbot) -> None:
     for method, token in expected_tokens.items():
         result = panel._dispatch(method)
         assert token in str(result)
+
+
+def test_analyze_panel_sindy_discovers_equation(qtbot) -> None:
+    from naviertwin.gui.panels.analyze_panel import AnalyzePanel
+
+    panel = AnalyzePanel()
+    qtbot.addWidget(panel)
+    panel.set_dataset(_make_sindy_dataset())
+
+    result = str(panel._dispatch("sindy"))
+
+    assert "SINDy:" in result
+    assert "dx0/dt" in result
+    assert "x0" in result
+
+
+def _make_sindy_dataset() -> object:
+    import pyvista as pv
+
+    from naviertwin.core.cfd_reader.base import CFDDataset
+
+    time_steps = np.linspace(0.0, 3.0, 40)
+    signal = np.exp(-0.5 * time_steps)
+    points = np.array([[0.0, 0.0, 0.0]], dtype=np.float32)
+    mesh = pv.PolyData(points)
+    mesh.point_data["u"] = np.array([signal[0]], dtype=np.float32)
+    series = signal.reshape(-1, 1).astype(np.float32)
+    return CFDDataset(
+        mesh=mesh,
+        time_steps=list(time_steps),
+        field_names=["u"],
+        metadata={"time_series_fields": {"u": series}},
+    )
