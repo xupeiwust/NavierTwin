@@ -98,6 +98,7 @@ class TestDocsStructure:
             "symbolic expression",
             "Attention viz",
             "Active Learning",
+            "Online Update",
             "SINDy",
             "ONNX",
             "TorchScript",

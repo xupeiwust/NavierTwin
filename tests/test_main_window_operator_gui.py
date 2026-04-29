@@ -82,3 +82,14 @@ def test_surrogate_training_still_builds_twin_engine(
     assert twin_engines == [engine]
     assert export_engines == [engine]
     assert "TwinEngine 연결 완료" in win._status_label.text()
+
+
+def test_online_learning_signal_updates_status(qtbot) -> None:
+    from naviertwin.gui.main_window import MainWindow
+
+    win = MainWindow(confirm_on_close=False)
+    qtbot.addWidget(win)
+
+    win._model_panel.online_learning_done.emit({"buffer_size": 7})
+
+    assert "Online Update 완료: buffer=7" in win._status_label.text()

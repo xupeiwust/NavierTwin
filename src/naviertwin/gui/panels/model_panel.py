@@ -6,6 +6,7 @@ Signals:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QListWidget,
     QPushButton,
     QSpinBox,
@@ -41,6 +43,7 @@ class ModelPanel(QWidget):
 
     model_trained = Signal(str, object)
     active_learning_done = Signal(object)
+    online_learning_done = Signal(object)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -50,6 +53,8 @@ class ModelPanel(QWidget):
         self._reduction_artifact: Optional[dict[str, object]] = None
         self._loaded_metadata: dict[str, object] = {}
         self._loss_series: dict[str, list[float]] = {}
+        self._online_learner: Optional[object] = None
+        self._last_active_candidates: Optional[np.ndarray] = None
         self._setup_ui()
 
     # ──────────────────────────────────────────────────────────────────
@@ -149,6 +154,34 @@ class ModelPanel(QWidget):
         active_form.addRow(self._active_btn)
         left_layout.addWidget(active_group)
 
+        online_group = QGroupBox("Online Update")
+        online_form = QFormLayout(online_group)
+
+        self._online_buffer_spin = QSpinBox()
+        self._online_buffer_spin.setRange(4, 10000)
+        self._online_buffer_spin.setValue(100)
+        online_form.addRow("Buffer size:", self._online_buffer_spin)
+
+        self._online_refit_spin = QSpinBox()
+        self._online_refit_spin.setRange(1, 1000)
+        self._online_refit_spin.setValue(1)
+        online_form.addRow("Refit every:", self._online_refit_spin)
+
+        self._online_x_edit = QLineEdit()
+        self._online_x_edit.setPlaceholderText("예: 0.1, 0.2 (공백이면 추천 후보)")
+        online_form.addRow("New x:", self._online_x_edit)
+
+        self._online_y_spin = QDoubleSpinBox()
+        self._online_y_spin.setRange(-1e12, 1e12)
+        self._online_y_spin.setDecimals(6)
+        self._online_y_spin.setValue(0.0)
+        online_form.addRow("Observed y:", self._online_y_spin)
+
+        self._online_update_btn = QPushButton("온라인 업데이트")
+        self._online_update_btn.clicked.connect(self._run_online_update)
+        online_form.addRow(self._online_update_btn)
+        left_layout.addWidget(online_group)
+
         # ─── 신경 연산자 (v2.0+) ───
         op_group = QGroupBox("신경 연산자 (Operator Learning)")
         op_form = QFormLayout(op_group)
@@ -199,6 +232,16 @@ class ModelPanel(QWidget):
         )
         active_result_layout.addWidget(self._active_table)
         right_layout.addWidget(active_result_group)
+
+        online_result_group = QGroupBox("Online Update 상태")
+        online_result_layout = QVBoxLayout(online_result_group)
+        self._online_table = QTableWidget(0, 3)
+        self._online_table.setHorizontalHeaderLabels(["Metric", "Value", "Notes"])
+        self._online_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+        online_result_layout.addWidget(self._online_table)
+        right_layout.addWidget(online_result_group)
 
         # 학습 loss curve
         loss_group = QGroupBox("학습 Loss Curve")
@@ -415,6 +458,8 @@ class ModelPanel(QWidget):
 
             surrogate.fit(X_train, Y_train)
             self._surrogate = surrogate
+            self._online_learner = None
+            self._last_active_candidates = None
             model_name = type(surrogate).__name__
             surrogate.training_metadata = {
                 "dataset_id": id(self._dataset) if self._dataset is not None else None,
@@ -487,6 +532,7 @@ class ModelPanel(QWidget):
             model = self._active_learning_adapter(self._surrogate)
             idx = self._select_next_samples(model, pool, k=k, strategy=strategy)
             selected = pool[np.asarray(idx, dtype=int)]
+            self._last_active_candidates = selected.copy()
             scores = self._active_learning_scores(self._surrogate, selected, strategy)
             self._render_active_candidates(selected, scores)
             result = {
@@ -502,6 +548,189 @@ class ModelPanel(QWidget):
             self.active_learning_done.emit(result)
         except Exception as exc:
             self._log(f"[ERROR] Active Learning 실패: {exc}")
+
+    def _run_online_update(self) -> None:
+        """새 관측값을 OnlineKriging 버퍼에 반영한다."""
+        if self._surrogate is None:
+            self._log("[WARN] Online Update를 실행할 학습된 surrogate가 없습니다.")
+            return
+
+        try:
+            background = self._online_background(self._surrogate)
+            if background is None:
+                self._log("[WARN] Online Update 초기화용 background가 없습니다.")
+                return
+            y_init = self._predict_scalar(self._surrogate, background)
+            x_new = self._online_update_x(background.shape[1])
+            y_obs = float(self._online_y_spin.value())
+            learner = self._ensure_online_learner(background, y_init)
+            before = float(np.ravel(learner.predict(x_new[None, :]))[0])
+            learner.update(x_new, y_obs)
+            after = float(np.ravel(learner.predict(x_new[None, :]))[0])
+            self._surrogate = learner
+            learner.training_metadata = self._online_training_metadata(
+                background,
+                y_init,
+                x_new,
+                y_obs,
+            )
+            self._render_online_update(
+                x_new=x_new,
+                y_obs=y_obs,
+                pred_before=before,
+                pred_after=after,
+                learner=learner,
+            )
+            result = {
+                "x": x_new,
+                "y": y_obs,
+                "prediction_before": before,
+                "prediction_after": after,
+                "buffer_size": len(getattr(learner, "_X", [])),
+            }
+            self._log(
+                f"OnlineKriging 업데이트 완료: y={y_obs:.6g}, "
+                f"pred_before={before:.6g}, pred_after={after:.6g}"
+            )
+            self.online_learning_done.emit(result)
+            self.model_trained.emit("online_kriging", learner)
+        except Exception as exc:
+            self._log(f"[ERROR] Online Update 실패: {exc}")
+
+    def _online_background(self, surrogate: object) -> np.ndarray | None:
+        metadata = getattr(surrogate, "training_metadata", None)
+        if not isinstance(metadata, Mapping):
+            return None
+        explain_meta = metadata.get("explainability")
+        if not isinstance(explain_meta, Mapping):
+            return None
+        background = np.asarray(explain_meta.get("background"), dtype=float)
+        if background.ndim != 2 or background.shape[0] < 2 or background.shape[1] == 0:
+            return None
+        return background
+
+    def _predict_scalar(self, surrogate: object, X: np.ndarray) -> np.ndarray:
+        raw = surrogate.predict(np.asarray(X, dtype=float))  # type: ignore[attr-defined]
+        arr = np.asarray(raw, dtype=float)
+        if arr.ndim == 0:
+            return np.full((X.shape[0],), float(arr))
+        if arr.ndim == 1:
+            return arr
+        flat = arr.reshape(arr.shape[0], -1)
+        idx = min(self._online_output_index(surrogate), flat.shape[1] - 1)
+        return flat[:, idx]
+
+    @staticmethod
+    def _online_output_index(surrogate: object) -> int:
+        metadata = getattr(surrogate, "training_metadata", None)
+        if not isinstance(metadata, Mapping):
+            return 0
+        explain_meta = metadata.get("explainability")
+        if not isinstance(explain_meta, Mapping):
+            return 0
+        try:
+            return max(0, int(explain_meta.get("output_index", 0)))
+        except (TypeError, ValueError):
+            return 0
+
+    def _online_update_x(self, n_params: int) -> np.ndarray:
+        text = self._online_x_edit.text().strip()
+        if text:
+            parts = [item for item in text.replace(",", " ").split() if item]
+            values = np.array([float(item) for item in parts], dtype=float)
+            if values.size != n_params:
+                raise ValueError(
+                    f"New x 차원 불일치: expected={n_params}, got={values.size}"
+                )
+            return values
+
+        if (
+            self._last_active_candidates is not None
+            and self._last_active_candidates.ndim == 2
+            and self._last_active_candidates.shape[1] == n_params
+            and self._last_active_candidates.shape[0] > 0
+        ):
+            return self._last_active_candidates[0].astype(float, copy=True)
+
+        self._log("[INFO] 추천 후보가 없어 background 평균점을 온라인 업데이트에 사용합니다.")
+        assert self._surrogate is not None
+        background = self._online_background(self._surrogate)
+        if background is None:
+            raise RuntimeError("online background unavailable")
+        return np.mean(background, axis=0)
+
+    def _ensure_online_learner(
+        self, X_init: np.ndarray, y_init: np.ndarray,
+    ) -> object:
+        from naviertwin.core.online_learning.online_learning import OnlineKriging
+
+        if (
+            isinstance(self._surrogate, OnlineKriging)
+            and self._surrogate.is_initialized
+            and self._surrogate.input_dim == X_init.shape[1]
+        ):
+            self._online_learner = self._surrogate
+            return self._surrogate
+        if (
+            isinstance(self._online_learner, OnlineKriging)
+            and self._online_learner.is_initialized
+            and self._online_learner.input_dim == X_init.shape[1]
+        ):
+            return self._online_learner
+
+        learner = OnlineKriging(
+            buffer_size=int(self._online_buffer_spin.value()),
+            refit_every=int(self._online_refit_spin.value()),
+        )
+        learner.initialize(X_init, y_init)
+        self._online_learner = learner
+        return learner
+
+    def _online_training_metadata(
+        self,
+        X_init: np.ndarray,
+        y_init: np.ndarray,
+        x_new: np.ndarray,
+        y_obs: float,
+    ) -> dict[str, object]:
+        background = np.vstack([X_init, x_new[None, :]])
+        y_all = np.append(y_init, y_obs)
+        n_features = background.shape[1]
+        return {
+            "source": "online_update",
+            "n_params": int(n_features),
+            "n_outputs": 1,
+            "n_samples": int(background.shape[0]),
+            "online_y_mean": float(np.mean(y_all)),
+            "explainability": {
+                "background": background[:32].copy(),
+                "feature_names": [f"param_{i}" for i in range(n_features)],
+                "output_index": 0,
+            },
+        }
+
+    def _render_online_update(
+        self,
+        *,
+        x_new: np.ndarray,
+        y_obs: float,
+        pred_before: float,
+        pred_after: float,
+        learner: object,
+    ) -> None:
+        rows = [
+            ("x", np.array2string(x_new, precision=4), "new observation"),
+            ("observed_y", f"{y_obs:.6g}", "customer/plant value"),
+            ("prediction_before", f"{pred_before:.6g}", "before update"),
+            ("prediction_after", f"{pred_after:.6g}", "after update"),
+            ("abs_error_after", f"{abs(pred_after - y_obs):.6g}", "post-update fit"),
+            ("buffer_count", str(len(getattr(learner, "_X", []))), "OnlineKriging"),
+        ]
+        self._online_table.setRowCount(len(rows))
+        for row, (metric, value, note) in enumerate(rows):
+            self._online_table.setItem(row, 0, QTableWidgetItem(metric))
+            self._online_table.setItem(row, 1, QTableWidgetItem(value))
+            self._online_table.setItem(row, 2, QTableWidgetItem(note))
 
     def _active_learning_adapter(self, surrogate: object) -> object:
         """select_next_samples가 기대하는 predict(return_std=True) adapter."""

@@ -384,6 +384,11 @@ class MainWindow(QMainWindow):
                 f"Active Learning 후보 추천 완료: {len(result.get('selected', []))}개"
             )
         )
+        self._model_panel.online_learning_done.connect(
+            lambda result: self._set_status(
+                f"Online Update 완료: buffer={int(result.get('buffer_size', 0))}"
+            )
+        )
 
         # Analyze 완료 상태 업데이트
         self._analyze_panel.analysis_done.connect(

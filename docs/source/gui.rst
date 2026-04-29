@@ -16,7 +16,7 @@ GUI 사용법
    * - ③ Reduce
      - POD / AE / VAE / GNN-AE 차원축소 + 에너지 곡선
    * - ④ Model
-     - Kriging / RBF / FNO / DeepONet / UNet / WNO / TFNO 학습, Active Learning 후보 추천
+     - Kriging / RBF / FNO / DeepONet / UNet / WNO / TFNO 학습, Active Learning 후보 추천, Online Update
    * - ⑤ Twin
      - 파라미터 → 실시간 예측, TwinEngine 저장/로드, inverse-design 최적화
    * - ⑥ Export

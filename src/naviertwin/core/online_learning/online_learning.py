@@ -84,6 +84,22 @@ class OnlineKriging:
             raise RuntimeError("initialize() 먼저 호출")
         return np.asarray(self._gp.predict(X), dtype=np.float64)
 
+    def predict_with_variance(
+        self, X: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """예측 평균과 분산을 반환한다."""
+        if not self.is_initialized or self._gp is None:
+            raise RuntimeError("initialize() 먼저 호출")
+        mean, std = self._gp.predict(np.asarray(X, dtype=np.float64), return_std=True)
+        return np.asarray(mean, dtype=np.float64), np.asarray(std**2, dtype=np.float64)
+
+    @property
+    def input_dim(self) -> int:
+        """현재 버퍼의 입력 차원."""
+        if not self._X:
+            return 0
+        return int(np.asarray(self._X[0]).size)
+
 
 class OnlineNN:
     """PyTorch MLP partial-fit 래퍼."""

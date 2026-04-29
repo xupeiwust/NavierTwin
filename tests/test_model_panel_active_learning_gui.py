@@ -10,6 +10,20 @@ pytest.importorskip("PySide6")
 
 class _VarianceSurrogate:
     input_dim = 2
+    training_metadata = {
+        "explainability": {
+            "background": np.array(
+                [
+                    [0.0, 0.0],
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                ],
+                dtype=float,
+            ),
+            "feature_names": ["alpha", "beta"],
+            "output_index": 0,
+        }
+    }
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         X = np.asarray(X, dtype=float)
@@ -32,6 +46,8 @@ def test_model_panel_active_learning_controls_render(qtbot) -> None:
     assert panel._active_strategy_combo.findText("random") >= 0
     assert panel._active_btn.text() == "후보 추천"
     assert panel._active_table.columnCount() == 3
+    assert panel._online_update_btn.text() == "온라인 업데이트"
+    assert panel._online_table.columnCount() == 3
 
 
 def test_model_panel_active_learning_recommends_candidates(
@@ -88,3 +104,44 @@ def test_model_panel_active_learning_requires_surrogate(qtbot) -> None:
     panel._run_active_learning()
 
     assert "학습된 surrogate가 없습니다" in panel._log_text.toPlainText()
+
+
+def test_model_panel_online_update_uses_recommended_candidate(qtbot) -> None:
+    from naviertwin.core.online_learning.online_learning import OnlineKriging
+    from naviertwin.gui.panels.model_panel import ModelPanel
+
+    panel = ModelPanel()
+    qtbot.addWidget(panel)
+    emitted: list[dict[str, object]] = []
+    trained: list[tuple[str, object]] = []
+    panel.online_learning_done.connect(emitted.append)
+    panel.model_trained.connect(lambda name, model: trained.append((name, model)))
+    panel._surrogate = _VarianceSurrogate()
+    panel._last_active_candidates = np.array([[0.25, 0.75]], dtype=float)
+    panel._online_y_spin.setValue(1.0)
+
+    panel._run_online_update()
+
+    assert isinstance(panel._surrogate, OnlineKriging)
+    assert panel._online_table.rowCount() == 6
+    assert panel._online_table.item(0, 0).text() == "x"
+    assert emitted and emitted[0]["buffer_size"] == 4
+    assert np.allclose(emitted[0]["x"], np.array([0.25, 0.75]))
+    assert trained and trained[0][0] == "online_kriging"
+    assert "OnlineKriging 업데이트 완료" in panel._log_text.toPlainText()
+
+
+def test_model_panel_online_update_requires_background(qtbot) -> None:
+    from naviertwin.gui.panels.model_panel import ModelPanel
+
+    class _NoBackgroundSurrogate:
+        def predict(self, X: np.ndarray) -> np.ndarray:
+            return np.asarray(X, dtype=float).sum(axis=1)
+
+    panel = ModelPanel()
+    qtbot.addWidget(panel)
+    panel._surrogate = _NoBackgroundSurrogate()
+
+    panel._run_online_update()
+
+    assert "초기화용 background가 없습니다" in panel._log_text.toPlainText()
