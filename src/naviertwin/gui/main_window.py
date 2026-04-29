@@ -260,6 +260,10 @@ class MainWindow(QMainWindow):
 
         # 도움말 메뉴
         self._help_menu = mb.addMenu("도움말(&H)")
+        doctor_action = QAction("환경 진단(&D)", self)
+        doctor_action.triggered.connect(self._show_doctor_report)
+        self._help_menu.addAction(doctor_action)
+
         update_action = QAction("업데이트 확인(&U)", self)
         update_action.triggered.connect(self._check_for_updates)
         self._help_menu.addAction(update_action)
@@ -478,6 +482,19 @@ class MainWindow(QMainWindow):
             "<p>CFD 후처리 결과를 AI/ROM 디지털 트윈으로 변환하는 오픈소스 툴.</p>"
             "<p>License: MIT</p>"
             "<p>Python 3.10+ | PySide6 | PyVista | PyTorch</p>",
+        )
+
+    def _show_doctor_report(self) -> None:
+        """고객 지원용 런타임 진단 리포트를 GUI에서 표시한다."""
+        from naviertwin.utils.doctor import build_doctor_report, format_doctor_report
+
+        report = build_doctor_report(include_optional=True)
+        status = str(report.get("status", "unknown"))
+        self._set_status(f"환경 진단: {status}")
+        QMessageBox.information(
+            self,
+            "NavierTwin 환경 진단",
+            format_doctor_report(report),
         )
 
     def _open_recent_project(self) -> None:
