@@ -40,6 +40,7 @@ CUSTOMER_SMOKE_TESTS = [
     "tests/test_cli_subcommands.py",
     "tests/test_lcs_pgd_entropy_api.py",
     "tests/test_main_window_postproc.py",
+    "tests/test_post_process_facade.py",
     "tests/test_postproc_panel.py",
 ]
 

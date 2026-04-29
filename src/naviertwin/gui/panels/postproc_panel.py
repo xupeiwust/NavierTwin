@@ -157,9 +157,36 @@ class PostProcessPanel(QWidget):
         """각 op에 대한 합리적인 smoke 데이터 생성."""
         rng = np.random.default_rng(0)
         base_signal = np.sin(np.linspace(0, 4 * np.pi, 500)) + 0.1 * rng.standard_normal(500)
+        unit_square = np.array([
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]],
+            [[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]],
+        ], dtype=np.float64)
+        xyz = rng.uniform(0.2, 1.2, (80, 3))
+        grid_x = np.linspace(-1.0, 1.0, 32)
+        grid_y = np.linspace(-1.0, 1.0, 32)
+        X, Y = np.meshgrid(grid_x, grid_y, indexing="ij")
         kwargs_map: dict[str, dict[str, Any]] = {
             "psd_welch": {"signal": base_signal, "fs": 100.0, "nperseg": 128, "window": "hann"},
             "reynolds_stats": {"u": rng.standard_normal((100, 5))},
+            "surface_forces": {
+                "triangles": unit_square,
+                "pressure": np.array([1.0, 1.0]),
+                "shear_traction": np.tile([0.1, 0.0, 0.0], (2, 1)),
+                "rho": 1.225,
+                "u_inf": 10.0,
+                "area_ref": 1.0,
+            },
+            "plane_flux": {
+                "triangles": unit_square,
+                "velocity": np.tile([0.0, 0.0, 1.0], (2, 1)),
+                "scalar": np.array([300.0, 320.0]),
+                "density": np.array([1.0, 1.1]),
+            },
+            "stat_convergence": {
+                "signal": 1.0 + 0.05 * rng.standard_normal(2000),
+                "n_batches": 20,
+                "window": 100,
+            },
             "quadrant_analysis": {
                 "up": rng.standard_normal(2000),
                 "vp": rng.standard_normal(2000),
@@ -200,6 +227,59 @@ class PostProcessPanel(QWidget):
                 "v": np.outer(np.linspace(-1, 1, 21), np.ones(21)),
                 "dx": 0.1,
                 "dy": 0.1,
+            },
+            "time_interp": {
+                "snapshots": np.stack([
+                    np.array([t, t * t, np.sin(t)], dtype=np.float64)
+                    for t in np.linspace(0.0, 1.0, 6)
+                ]),
+                "times": np.linspace(0.0, 1.0, 6),
+                "t_query": 0.45,
+                "n_uniform": 8,
+            },
+            "coord_transform": {
+                "xyz": xyz[:12],
+                "vectors": rng.standard_normal((12, 3)),
+            },
+            "line_probe": {
+                "points": xyz,
+                "field": xyz[:, 0] + 0.5 * xyz[:, 1],
+                "start": np.array([0.2, 0.2, 0.2]),
+                "end": np.array([1.2, 1.2, 1.2]),
+                "n_samples": 16,
+            },
+            "gof_normality": {"x": rng.standard_normal(300)},
+            "conditional_sampling": {
+                "signal": base_signal,
+                "threshold": 0.0,
+                "half_window": 8,
+            },
+            "grid_derivatives": {
+                "field_2d": X ** 2 + Y ** 2,
+                "dx": grid_x[1] - grid_x[0],
+                "dy": grid_y[1] - grid_y[0],
+            },
+            "anisotropy_state": {
+                "reynolds_stress": np.diag([1.2, 0.8, 0.6]),
+            },
+            "morphology_components": {
+                "field": ((X ** 2 + Y ** 2) < 0.45).astype(float),
+                "threshold": 0.5,
+                "min_size": 4,
+            },
+            "cell_volume_integrals": {
+                "vertices": np.array([
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [2.0, 0.0, 0.0],
+                    [3.0, 0.0, 0.0],
+                    [2.0, 1.0, 0.0],
+                    [2.0, 0.0, 1.0],
+                ], dtype=np.float64),
+                "connectivity": np.array([[0, 1, 2, 3], [4, 5, 6, 7]], dtype=np.int64),
+                "field": np.array([2.0, 4.0]),
             },
         }
         if op_name not in kwargs_map:

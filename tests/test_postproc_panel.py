@@ -124,3 +124,41 @@ class TestSmokeKwargs:
 
         with pytest.raises(ValueError, match="smoke 데이터"):
             PostProcessPanel._build_smoke_kwargs("undefined_op_xyz")
+
+    def test_commercial_parity_modules_exposed_to_gui_facade(self) -> None:
+        import inspect
+
+        import naviertwin.core.post_process_facade as post_process_facade
+        from naviertwin.core.post_process_facade import PostProcessFacade
+
+        expected_modules = [
+            "reynolds_stats",
+            "psd",
+            "surface_integrals",
+            "quadrant_pdf",
+            "two_point",
+            "stat_convergence",
+            "plane_flux",
+            "time_interp",
+            "coord_transform",
+            "slice_extract",
+            "expression_eval",
+            "phase_lock",
+            "running_moments",
+            "denoise",
+            "quantile_stats",
+            "eof_analysis",
+            "goodness_of_fit",
+            "conditional_sampling",
+            "grid_derivatives",
+            "critical_points",
+            "anisotropy",
+            "morphology",
+            "cell_volume",
+            "truncation_criteria",
+        ]
+        source = inspect.getsource(post_process_facade)
+        missing = [name for name in expected_modules if name not in source]
+
+        assert missing == []
+        assert len(PostProcessFacade().list_operations()) >= len(expected_modules)
