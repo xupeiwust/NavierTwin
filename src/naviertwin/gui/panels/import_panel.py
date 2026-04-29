@@ -1,6 +1,7 @@
 """CFD 파일 가져오기 패널.
 
-지원 포맷: OpenFOAM, VTK/VTU, STL. 드래그앤드롭 및 파일 브라우저 지원.
+지원 포맷: OpenFOAM, VTK/VTU/VTP/STL/PLY, Fluent, CGNS, Gmsh, SU2.
+드래그앤드롭 및 파일 브라우저 지원.
 
 Signals:
     dataset_loaded(CFDDataset): CFD 데이터셋이 성공적으로 로드될 때 발생.
@@ -29,7 +30,30 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from naviertwin.core.cfd_reader.reader_factory import ReaderFactory
+from naviertwin.core.cfd_reader import ReaderFactory
+
+
+def supported_format_label() -> str:
+    """고객에게 표시할 지원 포맷 요약을 반환한다."""
+    return (
+        "지원 포맷: OpenFOAM, VTK/VTU/VTP/STL/PLY, "
+        "Fluent CAS/DAT, CGNS, Gmsh MSH, SU2"
+    )
+
+
+def cfd_file_filter() -> str:
+    """ReaderFactory 등록 확장자를 모두 포함한 QFileDialog 필터."""
+    registered = " ".join(f"*{ext}" for ext in ReaderFactory.registered_extensions())
+    return (
+        f"All Supported CFD ({registered});;"
+        "OpenFOAM (*.foam *.OpenFOAM);;"
+        "VTK / PolyData (*.vtk *.vtu *.vtp *.stl *.ply);;"
+        "Fluent (*.cas *.dat);;"
+        "CGNS (*.cgns);;"
+        "Gmsh (*.msh);;"
+        "SU2 (*.su2);;"
+        "All Files (*)"
+    )
 
 
 class ImportPanel(QWidget):
@@ -62,7 +86,7 @@ class ImportPanel(QWidget):
         title.setObjectName("titleLabel")
         layout.addWidget(title)
 
-        subtitle = QLabel("지원 포맷: OpenFOAM, VTK/VTU/STL, PLY")
+        subtitle = QLabel(supported_format_label())
         subtitle.setObjectName("subtitleLabel")
         layout.addWidget(subtitle)
 
@@ -72,7 +96,9 @@ class ImportPanel(QWidget):
 
         path_row = QHBoxLayout()
         self._path_edit = QLineEdit()
-        self._path_edit.setPlaceholderText("파일 또는 OpenFOAM 케이스 디렉토리를 입력하거나 드래그하세요...")
+        self._path_edit.setPlaceholderText(
+            "CFD 파일 또는 OpenFOAM 케이스 디렉토리를 입력하거나 드래그하세요..."
+        )
         self._path_edit.setReadOnly(False)
         path_row.addWidget(self._path_edit)
 
@@ -179,7 +205,7 @@ class ImportPanel(QWidget):
             self,
             "CFD 파일 선택",
             "",
-            "CFD Files (*.foam *.OpenFOAM *.vtk *.vtu *.vtp *.stl *.ply);;All Files (*)",
+            cfd_file_filter(),
         )
         if path:
             self._path_edit.setText(path)
