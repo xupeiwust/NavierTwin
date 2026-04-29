@@ -151,6 +151,38 @@ class ExportPanel(QWidget):
         self._engine = engine
         self._log(f"TwinEngine 설정: {type(engine).__name__}")
 
+    def load_project_path(self, path: Path) -> bool:
+        """지정한 .ntwin 프로젝트 파일을 로드하고 workflow 복원 신호를 발생시킨다."""
+        try:
+            from naviertwin.core.export.ntwin_format import load_dataset
+
+            self._engine = None
+            dataset = load_dataset(path)
+            self._dataset = dataset
+            self._path_edit.setText(str(path))
+            self._log(f"✓ 프로젝트 로드: {path} ({dataset.n_points} pts)")
+
+            metadata = self._read_metadata_sidecar(path)
+            if metadata is not None:
+                self._attach_project_metadata(metadata)
+                self._apply_loaded_metadata_to_dataset(metadata)
+
+            model_path = path.with_suffix(".engine.pkl")
+            if model_path.exists():
+                from naviertwin.core.digital_twin.twin_engine import TwinEngine
+
+                self._engine = TwinEngine.load(model_path)
+                self._log(f"✓ TwinEngine 로드: {model_path}")
+            else:
+                self._log("ℹ TwinEngine 파일 없음 (.engine.pkl)")
+            if metadata is not None and self._engine is not None:
+                self._attach_project_metadata(metadata)
+            self.project_loaded.emit(self._dataset, self._engine)
+            return True
+        except Exception as exc:
+            self._log(f"[ERROR] 프로젝트 로드 실패: {exc}")
+            return False
+
     # ──────────────────────────────────────────────────────────────────
     # 슬롯
     # ──────────────────────────────────────────────────────────────────
@@ -272,33 +304,8 @@ class ExportPanel(QWidget):
         path, _ = QFileDialog.getOpenFileName(
             self, "프로젝트 열기", "", "NavierTwin Project (*.ntwin)"
         )
-        if not path:
-            return
-        try:
-            from naviertwin.core.export.ntwin_format import load_dataset
-            self._engine = None
-            dataset = load_dataset(Path(path))
-            self._dataset = dataset
-            self._log(f"✓ 프로젝트 로드: {path} ({dataset.n_points} pts)")
-
-            metadata = self._read_metadata_sidecar(Path(path))
-            if metadata is not None:
-                self._attach_project_metadata(metadata)
-                self._apply_loaded_metadata_to_dataset(metadata)
-
-            model_path = Path(path).with_suffix(".engine.pkl")
-            if model_path.exists():
-                from naviertwin.core.digital_twin.twin_engine import TwinEngine
-
-                self._engine = TwinEngine.load(model_path)
-                self._log(f"✓ TwinEngine 로드: {model_path}")
-            else:
-                self._log("ℹ TwinEngine 파일 없음 (.engine.pkl)")
-            if metadata is not None and self._engine is not None:
-                self._attach_project_metadata(metadata)
-            self.project_loaded.emit(self._dataset, self._engine)
-        except Exception as exc:
-            self._log(f"[ERROR] 프로젝트 로드 실패: {exc}")
+        if path:
+            self.load_project_path(Path(path))
 
     def _log(self, msg: str) -> None:
         self._log_text.append(msg)

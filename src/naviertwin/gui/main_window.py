@@ -383,8 +383,17 @@ class MainWindow(QMainWindow):
             "VTK (*.vtk *.vtu *.vtp *.stl);;All Files (*)",
         )
         if path:
-            self._import_panel._path_edit.setText(path)
-            self._tabs.setCurrentIndex(0)
+            self._open_selected_path(Path(path))
+
+    def _open_selected_path(self, path: Path) -> None:
+        """파일 메뉴 선택 경로를 포맷에 맞는 GUI 경로로 전달한다."""
+        if path.suffix.lower() == ".ntwin":
+            self._tabs.setCurrentWidget(self._export_panel)
+            self._export_panel.load_project_path(path)
+            return
+
+        self._import_panel._path_edit.setText(str(path))
+        self._tabs.setCurrentWidget(self._import_panel)
 
     def _save_project(self) -> None:
         self._tabs.setCurrentIndex(5)
