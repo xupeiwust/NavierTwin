@@ -90,9 +90,10 @@ def default_config_path() -> Path:
     return Path.home() / ".naviertwin" / "config.json"
 
 
-def _load_stylesheet() -> str:
-    """다크 테마 QSS를 로드한다."""
-    qss_path = Path(__file__).parent / "styles" / "dark_theme.qss"
+def _load_stylesheet(theme: str = "dark") -> str:
+    """GUI 테마 QSS를 로드한다."""
+    theme_name = theme if theme in {"dark", "light"} else "dark"
+    qss_path = Path(__file__).parent / "styles" / f"{theme_name}_theme.qss"
     try:
         return qss_path.read_text(encoding="utf-8")
     except Exception:
@@ -137,9 +138,8 @@ class MainWindow(QMainWindow):
     # ──────────────────────────────────────────────────────────────────
 
     def _apply_theme(self) -> None:
-        qss = _load_stylesheet()
-        if qss:
-            QApplication.instance().setStyleSheet(qss)  # type: ignore[union-attr]
+        qss = _load_stylesheet(self._config.theme)
+        QApplication.instance().setStyleSheet(qss)  # type: ignore[union-attr]
 
     def _setup_panels(self) -> None:
         central = QWidget()
@@ -152,10 +152,10 @@ class MainWindow(QMainWindow):
         self._tabs.setDocumentMode(True)
         self._tabs.setTabPosition(QTabWidget.TabPosition.North)
 
-        # i18n translator — default ko
         from naviertwin.utils.i18n import Translator
 
-        self._t = Translator(lang="ko")
+        self._t = Translator(lang=self._config.language)
+        self.setWindowTitle(self._t("app.title", "NavierTwin — CFD Digital Twin"))
 
         self._import_panel = ImportPanel()
         self._analyze_panel = AnalyzePanel()
@@ -206,6 +206,8 @@ class MainWindow(QMainWindow):
     def set_language(self, lang: str) -> None:
         """런타임 언어 전환 (탭 제목만 갱신)."""
         self._t.set_language(lang)
+        self._config.language = lang  # type: ignore[assignment]
+        self.setWindowTitle(self._t("app.title", "NavierTwin — CFD Digital Twin"))
         titles = [
             ("panel.import", "①"),
             ("panel.analyze", "②"),

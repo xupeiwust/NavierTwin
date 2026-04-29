@@ -53,11 +53,17 @@ class TestNavierTwinConfig:
             save_config,
         )
 
-        c = NavierTwinConfig(log_level="DEBUG", theme="light", max_threads=4)
+        c = NavierTwinConfig(
+            log_level="DEBUG",
+            language="en",
+            theme="light",
+            max_threads=4,
+        )
         path = tmp_path / "cfg.json"
         save_config(c, path)
         c2 = load_config(path)
         assert c2.log_level == "DEBUG"
+        assert c2.language == "en"
         assert c2.theme == "light"
         assert c2.max_threads == 4
 
