@@ -33,7 +33,12 @@ class TestDocsStructure:
         api = DOCS / "source" / "api"
         assert api.exists()
         # 주요 패키지 존재
-        for pkg in ["cfd_reader", "dimensionality_reduction", "operator_learning"]:
+        for pkg in [
+            "cfd_reader",
+            "dimensionality_reduction",
+            "operator_learning",
+            "post_process_facade",
+        ]:
             assert (api / f"{pkg}.rst").exists()
 
     def test_makefile(self) -> None:
@@ -93,6 +98,7 @@ class TestDocsStructure:
         assert "PySide6 기반 10 탭 인터페이스" in overview
         for token in [
             "Post-Tools",
+            "29개 facade",
             "Explain",
             "Kernel SHAP",
             "symbolic expression",
@@ -111,3 +117,22 @@ class TestDocsStructure:
         assert "GUI: Import / Analyze / Reduce / Model / Twin / Export 6 탭" not in readme
         assert "8 개 탭 구조" not in gui
         assert "6+ 탭 인터페이스" not in overview
+
+    def test_post_process_facade_docs_are_discoverable(self) -> None:
+        """Facade API docs must advertise the reusable operation contract."""
+        index = (DOCS / "source" / "index.rst").read_text(encoding="utf-8")
+        page = (DOCS / "source" / "api" / "post_process_facade.rst").read_text(
+            encoding="utf-8"
+        )
+
+        assert "api/post_process_facade" in index
+        for token in [
+            "PostProcessFacade",
+            "list_operations()",
+            "describe(op_name)",
+            "run(op_name, **kwargs)",
+            "surface forces",
+            "plane flux",
+            "EOF",
+        ]:
+            assert token in page

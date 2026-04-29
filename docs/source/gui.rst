@@ -28,7 +28,7 @@ GUI 사용법
    * - ⑨ Explain
      - Kernel SHAP feature attribution, symbolic expression fit, Attention weight matrix/top-k token viz
    * - ⑩ Post-Tools
-     - 상용 후처리 parity 기능: 통계, PSD, 적분, flux, interpolation, derivatives, EOF 등 facade 실행
+     - 29개 상용 후처리 parity facade: 통계, PSD, 적분, flux, interpolation, derivatives, EOF, topology 등 실행
 
 단축키
 -------
