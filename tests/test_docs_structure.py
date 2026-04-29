@@ -181,6 +181,26 @@ class TestDocsStructure:
         ]:
             assert f".. automodule:: {automodule}" in page
 
+    def test_export_api_docs_expose_artifact_workflows(self) -> None:
+        """Export docs should expose shipped dataset/model artifact workflows."""
+        index = (DOCS / "source" / "index.rst").read_text(encoding="utf-8")
+        page = (DOCS / "source" / "api" / "export.rst").read_text(encoding="utf-8")
+
+        assert "api/export" in index
+        for automodule in [
+            "naviertwin.core.export",
+            "naviertwin.core.export.ntwin_format",
+            "naviertwin.core.export.onnx_export",
+            "naviertwin.core.export.onnx_wrap",
+            "naviertwin.core.export.torchscript_export",
+            "naviertwin.core.export.torchscript_verify",
+            "naviertwin.core.export.torchscript_wrap",
+            "naviertwin.core.export.quantize",
+            "naviertwin.core.export.coreml_stub",
+            "naviertwin.core.export.tflite_stub",
+        ]:
+            assert f".. automodule:: {automodule}" in page
+
     def test_makefile(self) -> None:
         mf = DOCS / "Makefile"
         assert mf.exists()
