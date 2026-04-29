@@ -220,6 +220,14 @@ class MainWindow(QMainWindow):
             self._tabs.setTabText(i, f"{num} {self._t(key)}")
         self._refresh_view_menu()
 
+    def set_theme(self, theme: str) -> None:
+        """런타임 테마 전환."""
+        if theme not in {"dark", "light"}:
+            raise ValueError(f"지원하지 않는 테마: {theme}")
+        self._config.theme = theme  # type: ignore[assignment]
+        self._apply_theme()
+        self._refresh_view_menu()
+
     def update_compare_dashboard(
         self, results: dict[str, dict[str, float]]
     ) -> None:
@@ -285,7 +293,7 @@ class MainWindow(QMainWindow):
         self._help_menu.addAction(about_action)
 
     def _refresh_view_menu(self) -> None:
-        """현재 탭 목록 전체를 보기 메뉴에 노출한다."""
+        """현재 탭 목록과 표시 설정을 보기 메뉴에 노출한다."""
         view_menu = getattr(self, "_view_menu", None)
         tabs = getattr(self, "_tabs", None)
         if view_menu is None or tabs is None:
@@ -299,6 +307,24 @@ class MainWindow(QMainWindow):
                 action.setShortcut(f"Ctrl+{i + 1}")
             action.setData(i)
             action.triggered.connect(self._switch_tab)
+            view_menu.addAction(action)
+
+        view_menu.addSeparator()
+        for theme, label in (("dark", "다크 테마"), ("light", "라이트 테마")):
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(self._config.theme == theme)
+            action.setData(theme)
+            action.triggered.connect(self._switch_theme)
+            view_menu.addAction(action)
+
+        view_menu.addSeparator()
+        for lang, label in (("ko", "한국어"), ("en", "English")):
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(self._config.language == lang)
+            action.setData(lang)
+            action.triggered.connect(self._switch_language)
             view_menu.addAction(action)
 
     def _setup_statusbar(self) -> None:
@@ -484,6 +510,22 @@ class MainWindow(QMainWindow):
         idx = action.data()
         if isinstance(idx, int):
             self._tabs.setCurrentIndex(idx)
+
+    def _switch_theme(self) -> None:
+        action: QAction = self.sender()  # type: ignore[assignment]
+        theme = action.data()
+        if isinstance(theme, str):
+            self.set_theme(theme)
+            self._save_gui_config()
+            self._set_status(f"테마 변경: {theme}")
+
+    def _switch_language(self) -> None:
+        action: QAction = self.sender()  # type: ignore[assignment]
+        lang = action.data()
+        if isinstance(lang, str):
+            self.set_language(lang)
+            self._save_gui_config()
+            self._set_status(f"언어 변경: {lang}")
 
     def _show_about(self) -> None:
         QMessageBox.about(

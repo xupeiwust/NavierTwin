@@ -38,7 +38,10 @@ class TestMainWindowIntegration:
         qtbot.addWidget(win)
 
         view_menu = win._view_menu
-        actions = [action for action in view_menu.actions() if action.data() is not None]
+        actions = [
+            action for action in view_menu.actions()
+            if isinstance(action.data(), int)
+        ]
         assert len(actions) == win._tabs.count()
         assert actions[-1].data() == win._tabs.count() - 1
         assert "Post-Tools" in actions[-1].text()

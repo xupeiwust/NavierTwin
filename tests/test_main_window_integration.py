@@ -57,3 +57,68 @@ class TestMainWindowAssembly:
             assert app.styleSheet() == "/* light theme */"  # type: ignore[union-attr]
         finally:
             app.setStyleSheet(original_stylesheet)  # type: ignore[union-attr]
+
+    def test_view_menu_exposes_language_and_theme_preferences(self, qtbot) -> None:
+        pytest.importorskip("PySide6")
+        from naviertwin.gui.main_window import MainWindow
+
+        win = MainWindow(confirm_on_close=False)
+        qtbot.addWidget(win)
+
+        actions = [
+            action.text()
+            for action in win._view_menu.actions()
+            if not action.isSeparator()
+        ]
+        assert "다크 테마" in actions
+        assert "라이트 테마" in actions
+        assert "한국어" in actions
+        assert "English" in actions
+
+    def test_view_menu_language_and_theme_preferences_persist(
+        self, qtbot, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pytest.importorskip("PySide6")
+        from PySide6.QtGui import QAction
+        from PySide6.QtWidgets import QApplication
+
+        import naviertwin.gui.main_window as main_window
+        from naviertwin.utils.config import NavierTwinConfig, load_config, save_config
+
+        def action_with_data(data: str) -> QAction:
+            for action in win._view_menu.actions():
+                if action.data() == data:
+                    return action
+            raise AssertionError(f"missing view-menu action: {data}")
+
+        config_path = tmp_path / "config.json"
+        save_config(NavierTwinConfig(language="ko", theme="dark"), config_path)
+        loaded_themes: list[str] = []
+
+        def capture_stylesheet(theme: str = "dark") -> str:
+            loaded_themes.append(theme)
+            return f"/* {theme} theme */"
+
+        app = QApplication.instance()
+        original_stylesheet = app.styleSheet()  # type: ignore[union-attr]
+        monkeypatch.setattr(main_window, "_load_stylesheet", capture_stylesheet)
+        try:
+            win = main_window.MainWindow(
+                confirm_on_close=False,
+                config_path=config_path,
+            )
+            qtbot.addWidget(win)
+
+            action_with_data("light").trigger()
+            assert win._config.theme == "light"
+            assert loaded_themes[-1] == "light"
+            assert load_config(config_path).theme == "light"
+
+            action_with_data("en").trigger()
+            loaded = load_config(config_path)
+            assert loaded.language == "en"
+            assert loaded.theme == "light"
+            assert win._tabs.tabText(0) == "① Import"
+            assert win._status_label.text() == "언어 변경: en"
+        finally:
+            app.setStyleSheet(original_stylesheet)  # type: ignore[union-attr]
