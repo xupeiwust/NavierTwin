@@ -161,6 +161,26 @@ class TestDocsStructure:
         ]:
             assert f".. automodule:: {automodule}" in page
 
+    def test_solver_interfaces_api_docs_expose_reference_solvers(self) -> None:
+        """Solver-interface docs should expose shipped reference solvers."""
+        index = (DOCS / "source" / "index.rst").read_text(encoding="utf-8")
+        page = (DOCS / "source" / "api" / "solver_interfaces.rst").read_text(
+            encoding="utf-8"
+        )
+
+        assert "api/solver_interfaces" in index
+        for automodule in [
+            "naviertwin.core.solver_interfaces",
+            "naviertwin.core.solver_interfaces.pde_solvers",
+            "naviertwin.core.solver_interfaces.fvm_advection",
+            "naviertwin.core.solver_interfaces.lbm_d2q9",
+            "naviertwin.core.solver_interfaces.sph",
+            "naviertwin.core.solver_interfaces.lettuce_wrapper",
+            "naviertwin.core.solver_interfaces.flowtorch_wrapper",
+            "naviertwin.core.solver_interfaces.jax_fluids_wrapper",
+        ]:
+            assert f".. automodule:: {automodule}" in page
+
     def test_makefile(self) -> None:
         mf = DOCS / "Makefile"
         assert mf.exists()
