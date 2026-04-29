@@ -45,6 +45,10 @@ def test_twin_panel_optimization_controls_render(qtbot) -> None:
     assert panel._design_method_combo.findText("NSGA-II Pareto") >= 0
     assert panel._design_method_combo.findText("SIMP Topology") >= 0
     assert panel._design_btn.text() == "설계 최적화 quick-check"
+    assert panel._left_scroll.widgetResizable()
+    assert panel._left_scroll.widget() is not None
+    assert panel._left_scroll.minimumWidth() == 320
+    assert panel._left_scroll.maximumWidth() == 320
 
 
 def test_twin_panel_runs_surrogate_optimizer(

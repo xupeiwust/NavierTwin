@@ -257,7 +257,11 @@ class TwinPanel(QWidget):
         left_layout.addWidget(self._demo_btn)
 
         left_layout.addStretch()
-        layout.addWidget(left)
+        self._left_scroll = QScrollArea()
+        self._left_scroll.setWidgetResizable(True)
+        self._left_scroll.setFixedWidth(320)
+        self._left_scroll.setWidget(left)
+        layout.addWidget(self._left_scroll)
 
         # 우측: 결과
         right = QWidget()

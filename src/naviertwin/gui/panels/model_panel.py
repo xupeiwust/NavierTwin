@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -207,7 +208,11 @@ class ModelPanel(QWidget):
         left_layout.addWidget(op_group)
 
         left_layout.addStretch()
-        layout.addWidget(left)
+        self._left_scroll = QScrollArea()
+        self._left_scroll.setWidgetResizable(True)
+        self._left_scroll.setFixedWidth(300)
+        self._left_scroll.setWidget(left)
+        layout.addWidget(self._left_scroll)
 
         # 우측
         right = QWidget()

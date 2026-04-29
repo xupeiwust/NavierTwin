@@ -48,6 +48,10 @@ def test_model_panel_active_learning_controls_render(qtbot) -> None:
     assert panel._active_table.columnCount() == 3
     assert panel._online_update_btn.text() == "온라인 업데이트"
     assert panel._online_table.columnCount() == 3
+    assert panel._left_scroll.widgetResizable()
+    assert panel._left_scroll.widget() is not None
+    assert panel._left_scroll.minimumWidth() == 300
+    assert panel._left_scroll.maximumWidth() == 300
 
 
 def test_model_panel_active_learning_recommends_candidates(
