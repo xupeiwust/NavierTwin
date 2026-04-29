@@ -129,6 +129,38 @@ class TestDocsStructure:
         ]:
             assert f".. automodule:: {automodule}" in page
 
+    def test_flow_analysis_api_docs_expose_core_workflows(self) -> None:
+        """Flow-analysis docs should expose customer post-processing workflows."""
+        index = (DOCS / "source" / "index.rst").read_text(encoding="utf-8")
+        page = (DOCS / "source" / "api" / "flow_analysis.rst").read_text(
+            encoding="utf-8"
+        )
+
+        assert "api/flow_analysis" in index
+        for automodule in [
+            "naviertwin.core.flow_analysis",
+            "naviertwin.core.flow_analysis.statistics",
+            "naviertwin.core.flow_analysis.reynolds_stats",
+            "naviertwin.core.flow_analysis.psd",
+            "naviertwin.core.flow_analysis.stat_convergence",
+            "naviertwin.core.flow_analysis.surface_integrals",
+            "naviertwin.core.flow_analysis.plane_flux",
+            "naviertwin.core.flow_analysis.slice_extract",
+            "naviertwin.core.flow_analysis.cell_volume",
+            "naviertwin.core.flow_analysis.coord_transform",
+            "naviertwin.core.flow_analysis.grid_derivatives",
+            "naviertwin.core.flow_analysis.expression_eval",
+            "naviertwin.core.flow_analysis.anisotropy",
+            "naviertwin.core.flow_analysis.vortex",
+            "naviertwin.core.flow_analysis.boundary_layer",
+            "naviertwin.core.flow_analysis.thermofluids",
+            "naviertwin.core.flow_analysis.modal",
+            "naviertwin.core.flow_analysis.eof_analysis",
+            "naviertwin.core.flow_analysis.phase_lock",
+            "naviertwin.core.flow_analysis.conditional_sampling",
+        ]:
+            assert f".. automodule:: {automodule}" in page
+
     def test_makefile(self) -> None:
         mf = DOCS / "Makefile"
         assert mf.exists()
