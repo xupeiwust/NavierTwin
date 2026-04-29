@@ -32,6 +32,6 @@ NavierTwin 은 CFD 시뮬레이션 결과를 AI/ROM (Reduced Order Model) 기반
 ---------
 
 - ``core/`` — 순수 Python 연산 로직 (Qt 독립)
-- ``gui/`` — PySide6 기반 6+ 탭 인터페이스
+- ``gui/`` — PySide6 기반 10 탭 인터페이스
 - ``api/`` — FastAPI REST 서버 (optional)
 - ``utils/`` — config, logger, i18n, profile, callbacks

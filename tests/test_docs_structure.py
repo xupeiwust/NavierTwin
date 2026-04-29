@@ -80,3 +80,29 @@ class TestDocsStructure:
 
         for path in customer_docs:
             assert __version__ not in path.read_text(encoding="utf-8")
+
+    def test_gui_docs_track_customer_facing_tabs_and_tools(self) -> None:
+        """GUI docs must reflect currently exposed commercial desktop workflows."""
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        gui = (DOCS / "source" / "gui.rst").read_text(encoding="utf-8")
+        overview = (DOCS / "source" / "overview.rst").read_text(encoding="utf-8")
+        combined = readme + "\n" + gui + "\n" + overview
+
+        assert "10 탭" in readme
+        assert "10 개 탭 구조" in gui
+        assert "PySide6 기반 10 탭 인터페이스" in overview
+        for token in [
+            "Post-Tools",
+            "Explain",
+            "Kernel SHAP",
+            "Active Learning",
+            "SINDy",
+            "ONNX",
+            "TorchScript",
+            "파이프라인 데모",
+            "API 서버",
+        ]:
+            assert token in combined
+        assert "GUI: Import / Analyze / Reduce / Model / Twin / Export 6 탭" not in readme
+        assert "8 개 탭 구조" not in gui
+        assert "6+ 탭 인터페이스" not in overview
