@@ -19,6 +19,11 @@ class TestMilestoneVerify:
         from naviertwin.utils.verification_report import build_report, to_markdown
 
         r = build_report(
+            smoke={
+                "release_smoke_pass": True,
+                "wheel_smoke_pass": True,
+                "sdist_smoke_pass": True,
+            },
             unit={"passed": 1900, "failed": 0},
             coverage_pct=85,
             mms_results=[
@@ -33,6 +38,7 @@ class TestMilestoneVerify:
             security_findings=0,
         )
         assert r["overall"] == "PASS"
+        assert r["layers"]["L0_smoke"] is True
         md = to_markdown(r)
         assert "# Verification Report" in md
         assert "✅" in md

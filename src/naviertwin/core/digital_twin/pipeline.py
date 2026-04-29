@@ -102,6 +102,16 @@ class NavierTwinPipeline:
             from naviertwin.core.dimensionality_reduction.linear.pod import SnapshotPOD
 
             red = SnapshotPOD(n_modes=self.n_modes)
+        elif self.reducer_kind == "incremental_pod":
+            from naviertwin.core.dimensionality_reduction.linear.incremental_pod import (
+                IncrementalPOD,
+            )
+
+            red = IncrementalPOD(n_modes=self.n_modes)
+        elif self.reducer_kind == "mrpod":
+            from naviertwin.core.dimensionality_reduction.linear.mrpod import MRPOD
+
+            red = MRPOD(n_scales=3, n_modes_per_scale=self.n_modes)
         elif self.reducer_kind == "ae":
             from naviertwin.core.dimensionality_reduction.nonlinear.autoencoder import (
                 Autoencoder,

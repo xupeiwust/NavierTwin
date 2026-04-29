@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
+
 
 class TestArtifactZip:
     def test_round_trip(self, tmp_path) -> None:
@@ -19,3 +21,9 @@ class TestArtifactZip:
         man = read_manifest(out)
         names = sorted(m["name"] for m in man)
         assert names == ["a.txt", "b.txt"]
+        by_name = {m["name"]: m for m in man}
+        for fp in [a, b]:
+            data = fp.read_bytes()
+            entry = by_name[fp.name]
+            assert entry["bytes"] == len(data)
+            assert entry["sha256"] == sha256(data).hexdigest()

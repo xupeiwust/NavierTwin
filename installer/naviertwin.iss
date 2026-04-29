@@ -4,7 +4,7 @@
 
 [Setup]
 AppName=NavierTwin
-AppVersion=4.2.0
+AppVersion=4.2.58
 AppPublisher=NavierTwin Contributors
 AppPublisherURL=https://github.com/younglin90/NavierTwin
 DefaultDirName={autopf}\NavierTwin

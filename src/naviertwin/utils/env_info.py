@@ -9,17 +9,20 @@ Examples:
 
 from __future__ import annotations
 
-import importlib
 import platform
 import sys
+from importlib import metadata
 from typing import Any
+
+_DISTRIBUTION_NAMES = {
+    "sklearn": "scikit-learn",
+}
 
 
 def _pkg_version(name: str) -> str | None:
     try:
-        m = importlib.import_module(name)
-        return str(getattr(m, "__version__", "unknown"))
-    except ImportError:
+        return metadata.version(_DISTRIBUTION_NAMES.get(name, name))
+    except metadata.PackageNotFoundError:
         return None
 
 

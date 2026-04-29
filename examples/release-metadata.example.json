@@ -1,0 +1,7 @@
+{
+  "version": "4.2.59",
+  "channel": "stable",
+  "url": "https://github.com/naviertwin/naviertwin/releases/download/v4.2.59/NavierTwinSetup.exe",
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "notes": "Example metadata for offline update-check smoke validation."
+}

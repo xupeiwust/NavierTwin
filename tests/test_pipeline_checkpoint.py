@@ -82,3 +82,55 @@ class TestPipelineCheckpoint:
 
         with pytest.raises(FileNotFoundError):
             load_pipeline_state("/nonexistent.h5")
+
+    def test_restore_incremental_pod_roundtrip(self, tmp_path: Path) -> None:
+        pytest.importorskip("h5py")
+        from naviertwin.core.digital_twin.pipeline import NavierTwinPipeline
+        from naviertwin.core.digital_twin.pipeline_checkpoint import (
+            load_pipeline_state,
+            restore_pipeline,
+            save_pipeline_state,
+        )
+
+        rng = np.random.default_rng(3)
+        X = rng.standard_normal((24, 12))
+        p1 = NavierTwinPipeline(reducer_kind="incremental_pod", n_modes=4, surrogate_kind="rbf")
+        p1.load_snapshots(X, field_name="U")
+        p1.reduce()
+
+        out = tmp_path / "inc_ckpt.h5"
+        save_pipeline_state(p1, out)
+
+        p2 = NavierTwinPipeline(reducer_kind="incremental_pod", n_modes=4)
+        ckpt = load_pipeline_state(out)
+        restore_pipeline(p2, ckpt)
+
+        assert p2.state.reducer is not None
+        coeffs = p2.state.reducer.encode(X)
+        assert coeffs.shape[0] == X.shape[1]
+
+    def test_restore_mrpod_roundtrip(self, tmp_path: Path) -> None:
+        pytest.importorskip("h5py")
+        from naviertwin.core.digital_twin.pipeline import NavierTwinPipeline
+        from naviertwin.core.digital_twin.pipeline_checkpoint import (
+            load_pipeline_state,
+            restore_pipeline,
+            save_pipeline_state,
+        )
+
+        rng = np.random.default_rng(4)
+        X = rng.standard_normal((18, 10))
+        p1 = NavierTwinPipeline(reducer_kind="mrpod", n_modes=2, surrogate_kind="rbf")
+        p1.load_snapshots(X, field_name="U")
+        p1.reduce()
+
+        out = tmp_path / "mr_ckpt.h5"
+        save_pipeline_state(p1, out)
+
+        p2 = NavierTwinPipeline(reducer_kind="mrpod", n_modes=2)
+        ckpt = load_pipeline_state(out)
+        restore_pipeline(p2, ckpt)
+
+        assert p2.state.reducer is not None
+        coeffs = p2.state.reducer.encode(X)
+        assert coeffs.shape[0] == X.shape[1]

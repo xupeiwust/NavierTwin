@@ -22,6 +22,8 @@ class TestBuilder:
         from naviertwin.core.digital_twin.pipeline_builder import validate_config
 
         assert validate_config({"reducer_kind": "pod", "n_modes": 3}) == []
+        assert validate_config({"reducer_kind": "incremental_pod", "n_modes": 3}) == []
+        assert validate_config({"reducer_kind": "mrpod", "n_modes": 3}) == []
 
     def test_validate_issues(self) -> None:
         from naviertwin.core.digital_twin.pipeline_builder import validate_config

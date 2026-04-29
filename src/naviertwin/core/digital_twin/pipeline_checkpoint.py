@@ -132,23 +132,57 @@ def restore_pipeline(
     if "coeffs" in ckpt:
         state.coeffs = ckpt["coeffs"]
 
-    # POD reducer 복원
+    # Reducer 복원 (pod / incremental_pod / mrpod)
     if {"modes", "singular_values", "mean"}.issubset(ckpt):
+        reducer_kind = str(ckpt.get("meta", {}).get("reducer_kind", "pod"))
         try:
-            from naviertwin.core.dimensionality_reduction.linear.pod import (
-                SnapshotPOD,
-            )
+            modes = np.asarray(ckpt["modes"])
+            singular_values = np.asarray(ckpt["singular_values"])
+            mean = np.asarray(ckpt["mean"])
+            energy = np.asarray(ckpt.get("energy", np.ones(modes.shape[1])))
 
-            r = SnapshotPOD(n_modes=pipe.n_modes)
-            r.modes_ = np.asarray(ckpt["modes"])
-            r.singular_values_ = np.asarray(ckpt["singular_values"])
-            r.mean_ = np.asarray(ckpt["mean"])
-            r.energy_ratio_ = np.asarray(ckpt.get("energy", np.ones(r.modes_.shape[1])))
-            r.n_components = r.modes_.shape[1]
-            r.is_fitted = True
-            state.reducer = r
+            if reducer_kind == "incremental_pod":
+                from naviertwin.core.dimensionality_reduction.linear.incremental_pod import (
+                    IncrementalPOD,
+                )
+
+                r = IncrementalPOD(n_modes=int(modes.shape[1]))
+                r.basis = modes
+                r.singular_values = singular_values
+                r._mean = mean
+                r.n_snapshots = int(
+                    ckpt["snapshots"].shape[1] if "snapshots" in ckpt else 0
+                )
+                r._refresh_compat_attrs()
+                state.reducer = r
+            elif reducer_kind == "mrpod":
+                from naviertwin.core.dimensionality_reduction.linear.mrpod import MRPOD
+
+                r = MRPOD(n_scales=1, n_modes_per_scale=int(modes.shape[1]))
+                r.scale_modes = [modes]
+                r.scale_energies = [np.maximum(singular_values, 0.0) ** 2]
+                r.mean_ = mean.reshape(-1, 1) if mean.ndim == 1 else mean
+                r.modes_ = modes
+                r.singular_values_ = singular_values
+                r.energy_ratio_ = energy
+                r.n_components = int(modes.shape[1])
+                r.is_fitted = True
+                state.reducer = r
+            else:
+                from naviertwin.core.dimensionality_reduction.linear.pod import (
+                    SnapshotPOD,
+                )
+
+                r = SnapshotPOD(n_modes=pipe.n_modes)
+                r.modes_ = modes
+                r.singular_values_ = singular_values
+                r.mean_ = mean
+                r.energy_ratio_ = energy
+                r.n_components = r.modes_.shape[1]
+                r.is_fitted = True
+                state.reducer = r
         except Exception as e:  # noqa: BLE001
-            logger.warning("POD 복원 실패: %s", e)
+            logger.warning("Reducer 복원 실패(%s): %s", reducer_kind, e)
 
     state.metrics = dict(ckpt.get("metrics", {}))
     return pipe

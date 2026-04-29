@@ -4,6 +4,8 @@ Reads JSON inputs from `verify_artifacts/` (one file per layer) and writes
 `verification_report.{json,md}` consumable by CI as an artifact.
 
 Layer input files (any missing layer is skipped, not failed):
+- smoke.json:       {"installer_smoke_pass": bool, "release_smoke_pass": bool,
+                     "wheel_smoke_pass": bool, "sdist_smoke_pass": bool}
 - unit.json:        {"passed": int, "failed": int}
 - coverage.json:    {"coverage_pct": int}
 - mms.json:         [{"name": str, "observed_p": float, "target": float}, ...]
@@ -38,6 +40,15 @@ def main(root: str = "verify_artifacts") -> int:
     p = Path(root)
     p.mkdir(parents=True, exist_ok=True)
 
+    smoke = _load(
+        p / "smoke.json",
+        {
+            "installer_smoke_pass": False,
+            "release_smoke_pass": False,
+            "wheel_smoke_pass": False,
+            "sdist_smoke_pass": False,
+        },
+    )
     unit = _load(p / "unit.json", {"passed": 0, "failed": 0})
     coverage = _load(p / "coverage.json", {"coverage_pct": 0})
     mms = _load(p / "mms.json", [])
@@ -46,8 +57,11 @@ def main(root: str = "verify_artifacts") -> int:
     security = _load(p / "security.json", {"security_findings": 0})
 
     report = build_report(
+        smoke=smoke,
         unit=unit,
         coverage_pct=int(coverage.get("coverage_pct", 0)),
+        coverage_skipped=bool(coverage.get("coverage_skipped", False)),
+        coverage_exit_code=int(coverage.get("coverage_exit_code", 0)),
         mms_results=mms,
         vv_results=vv,
         drift_score=float(drift.get("drift_score", 0.0)),

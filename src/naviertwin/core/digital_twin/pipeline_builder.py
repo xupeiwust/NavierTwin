@@ -35,7 +35,14 @@ def validate_config(cfg: dict[str, Any]) -> list[str]:
     issues: list[str] = []
     if "n_modes" in cfg and (not isinstance(cfg["n_modes"], int) or cfg["n_modes"] < 1):
         issues.append("n_modes must be positive int")
-    if "reducer_kind" in cfg and cfg["reducer_kind"] not in {"pod", "dmd", "ae", "vae"}:
+    if "reducer_kind" in cfg and cfg["reducer_kind"] not in {
+        "pod",
+        "incremental_pod",
+        "mrpod",
+        "dmd",
+        "ae",
+        "vae",
+    }:
         issues.append(f"unknown reducer_kind: {cfg['reducer_kind']}")
     if "surrogate_kind" in cfg and cfg["surrogate_kind"] not in {
         "kriging", "rbf", "gp", "fno", "deeponet",

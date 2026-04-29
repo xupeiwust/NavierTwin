@@ -8,6 +8,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      MPLCONFIGDIR: /tmp/mpl
+      NAVIER_TWIN_LOG_DIR: /tmp/naviertwin/logs
     strategy:
       fail-fast: false
       matrix:
@@ -25,20 +29,27 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]" numpy h5py scikit-learn pytest-cov pip-audit bandit
+          python -m pip install -e ".[core,dev]" pip-audit bandit
 
       - name: Lint (ruff)
         run: ruff check src/ tests/
 
       - name: CLI smoke test
         run: |
-          python3 main.py --help
-          python3 -m naviertwin.main --help
+          naviertwin --help
+          python -m naviertwin.main --help
+          python main.py --help
 
-      - name: Run tests (core suite + coverage)
-        run: |
-          pytest -q -m "not optional" \
-            --cov=src/naviertwin --cov-report=term-missing
+      - name: Release smoke suite
+        run: python scripts/release_smoke.py
+      - name: Installer contract smoke
+        run: python scripts/installer_smoke.py
+
+      - name: Wheel artifact smoke
+        run: python scripts/wheel_smoke.py --install-smoke
+
+      - name: Source distribution smoke
+        run: python scripts/sdist_smoke.py --install-smoke
 
       - name: Code verification (MMS + convergence)
         run: pytest tests/integration/test_mms_convergence.py -v -m convergence

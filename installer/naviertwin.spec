@@ -1,13 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 # NavierTwin PyInstaller 스펙 파일
 # 빌드: pyinstaller installer/naviertwin.spec
-# 출력: installer/dist/naviertwin/
+# 출력: dist/NavierTwin/
 
 import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
-ROOT = Path(SPECPATH).parent  # 프로젝트 루트
+ROOT = Path(SPECPATH).parent.parent  # 프로젝트 루트
 SRC = ROOT / "src"
 
 # ──────────────────────────────────────────────────────────────────────
@@ -62,7 +62,11 @@ hidden_imports = [
     "naviertwin.gui.panels.model_panel",
     "naviertwin.gui.panels.twin_panel",
     "naviertwin.gui.panels.export_panel",
+    "naviertwin.gui.panels.simulation_panel",
+    "naviertwin.gui.panels.postproc_panel",
+    "naviertwin.gui.widgets.model_compare_widget",
     "naviertwin.gui.widgets.vtk_viewer",
+    "naviertwin.core.post_process_facade",
     "naviertwin.utils.config",
     "naviertwin.utils.logger",
 ]
@@ -91,6 +95,9 @@ datas = [
     # 기본 설정 파일 (있는 경우)
     # (str(ROOT / "config" / "default.json"), "config"),
 ]
+
+for locale_file in (SRC / "naviertwin" / "gui" / "styles" / "i18n").glob("*.json"):
+    datas.append((str(locale_file), "naviertwin/gui/styles/i18n"))
 
 # VTK 데이터 파일
 try:
@@ -153,7 +160,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="naviertwin",
+    name="NavierTwin",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -177,6 +184,6 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="naviertwin",
-    distpath=str(ROOT / "installer" / "dist"),
+    name="NavierTwin",
+    distpath=str(ROOT / "dist"),
 )

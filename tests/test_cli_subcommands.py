@@ -2,26 +2,36 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+
+EXPECTED_SUBCOMMANDS = [
+    "benchmark",
+    "server",
+    "pipeline",
+    "pipeline-demo",
+    "preflight",
+    "support-bundle",
+    "autorefine",
+    "update-check",
+    "doctor",
+]
 
 
 class TestCLISubcommands:
     def test_help_lists_subcommands(self) -> None:
         env_src = {"PYTHONPATH": "src"}
-        import os
         env = {**os.environ, **env_src}
         result = subprocess.run(
             [sys.executable, "-m", "naviertwin.main", "--help"],
             capture_output=True, text=True, env=env,
         )
         assert result.returncode == 0
-        assert "benchmark" in result.stdout
-        assert "server" in result.stdout
-        assert "pipeline" in result.stdout
+        for command in EXPECTED_SUBCOMMANDS:
+            assert command in result.stdout
 
     def test_pipeline_subcommand_runs(self) -> None:
-        import os
         env = {**os.environ, "PYTHONPATH": "src"}
         result = subprocess.run(
             [

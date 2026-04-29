@@ -54,6 +54,15 @@ class TestBuildParser:
         assert args.reducer == "ae"
         assert args.n_modes == 8
 
+    def test_parse_autorefine_subcommand(self) -> None:
+        from naviertwin.main import _build_parser
+
+        p = _build_parser()
+        args = p.parse_args(["autorefine", "--interval-sec", "60", "--iterations", "2"])
+        assert args.command == "autorefine"
+        assert args.interval_sec == 60
+        assert args.iterations == 2
+
 
 class TestRunGui:
     def test_run_gui_no_pyside6(self, monkeypatch) -> None:
@@ -110,6 +119,28 @@ class TestRunPipeline:
         from naviertwin.main import _run_pipeline
 
         code = _run_pipeline("ae", 2, "rbf")
+        assert code == 0
+
+
+class TestRunAutoRefine:
+    def test_run_autorefine_once(self, tmp_path) -> None:
+        from naviertwin.main import _run_autorefine
+
+        src = tmp_path / "src" / "naviertwin"
+        src.mkdir(parents=True)
+        (src / "main.py").write_text("x=1\n", encoding="utf-8")
+        (tmp_path / "ROADMAP.md").write_text(
+            "- [ ] `src/naviertwin/main.py` 반영 테스트\n",
+            encoding="utf-8",
+        )
+
+        code = _run_autorefine(
+            interval_sec=1,
+            iterations=1,
+            apply=True,
+            project_root=str(tmp_path),
+            artifact_dir=None,
+        )
         assert code == 0
 
 

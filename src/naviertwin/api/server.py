@@ -2,7 +2,8 @@
 
 엔드포인트:
     - GET  /health                        : 헬스 체크
-    - POST /reduce/pod                    : POD 수행, 모드/에너지 반환
+    - POST /reduce                         : reducer 수행, 모드/에너지 반환
+    - POST /reduce/pod                     : POD 전용(하위 호환)
     - POST /analytic/couette              : Couette 해석해 샘플
     - POST /analytic/poiseuille_2d        : Poiseuille 2D 해석해 샘플
     - POST /optimize/bayesian             : BO 최소화 (간단 quadratic)
@@ -12,6 +13,8 @@ Usage:
 """
 
 from typing import Any, List, Optional  # noqa: UP035 — pydantic v1 호환
+
+from naviertwin import __version__
 
 _HAS_FASTAPI = True
 try:
@@ -42,6 +45,7 @@ if _HAS_FASTAPI:
     class PODReq(BaseModel):
         snapshots: List[List[float]]  # noqa: UP006
         n_modes: int = 5
+        reducer_kind: str = "pod"
 
     class BayesianOptReq(BaseModel):
         bounds: List[List[float]]  # noqa: UP006
@@ -66,7 +70,7 @@ def create_app() -> Any:
         )
     import numpy as np
 
-    app = FastAPI(title="NavierTwin API", version="1.0")
+    app = FastAPI(title="NavierTwin API", version=__version__)
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -88,18 +92,52 @@ def create_app() -> Any:
         sol = poiseuille_flow_2d(dpdx=req.dpdx, mu=req.mu, H=req.H, y=y)
         return {"coords": y.tolist(), "velocity": sol.velocity.tolist()}
 
+    def _run_reducer(req: PODReq) -> dict[str, Any]:
+        X = np.asarray(req.snapshots, dtype=np.float64)
+        if req.reducer_kind == "pod":
+            from naviertwin.core.dimensionality_reduction.linear.pod import SnapshotPOD
+
+            reducer = SnapshotPOD(n_modes=req.n_modes)
+        elif req.reducer_kind == "incremental_pod":
+            from naviertwin.core.dimensionality_reduction.linear.incremental_pod import (
+                IncrementalPOD,
+            )
+
+            reducer = IncrementalPOD(n_modes=req.n_modes)
+        elif req.reducer_kind == "mrpod":
+            from naviertwin.core.dimensionality_reduction.linear.mrpod import MRPOD
+
+            reducer = MRPOD(n_scales=3, n_modes_per_scale=req.n_modes)
+        else:
+            raise fastapi.HTTPException(
+                status_code=400,
+                detail=f"unknown reducer_kind: {req.reducer_kind}",
+            )
+
+        reducer.fit(X)
+        singular_values = getattr(reducer, "singular_values_", getattr(reducer, "singular_values", None))
+        if singular_values is None:
+            singular_values = []
+        energy = getattr(reducer, "energy_ratio_", None)
+        if energy is None:
+            energy = getattr(reducer, "energy_ratio", [])
+        n_components = int(getattr(reducer, "n_components", req.n_modes))
+        return {
+            "reducer_kind": req.reducer_kind,
+            "n_modes": n_components,
+            "singular_values": np.asarray(singular_values, dtype=np.float64).tolist(),
+            "cumulative_energy": np.asarray(energy, dtype=np.float64).tolist(),
+        }
+
+    @app.post("/reduce")
+    def reduce(req: PODReq = Body(...)) -> dict[str, Any]:
+        return _run_reducer(req)
+
     @app.post("/reduce/pod")
     def pod(req: PODReq = Body(...)) -> dict[str, Any]:
-        from naviertwin.core.dimensionality_reduction.linear.pod import SnapshotPOD
-
-        X = np.asarray(req.snapshots, dtype=np.float64)
-        pod_obj = SnapshotPOD(n_modes=req.n_modes)
-        pod_obj.fit(X)
-        return {
-            "n_modes": pod_obj.n_components,
-            "singular_values": pod_obj.singular_values_.tolist(),
-            "cumulative_energy": pod_obj.energy_ratio_.tolist(),
-        }
+        # 하위 호환: 기존 요청은 reducer_kind 없이 /reduce/pod를 호출한다.
+        req.reducer_kind = "pod"
+        return _run_reducer(req)
 
     @app.post("/simulate/lbm_cavity")
     def lbm_cavity(req: LBMReq = Body(...)) -> dict[str, Any]:

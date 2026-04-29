@@ -71,7 +71,9 @@ class ReducePanel(QWidget):
         method_layout = QFormLayout(method_group)
 
         self._method_combo = QComboBox()
-        self._method_combo.addItems(["Snapshot POD", "Randomized POD", "DMD"])
+        self._method_combo.addItems(
+            ["Snapshot POD", "Randomized POD", "Incremental POD", "MRPOD", "DMD"]
+        )
         self._method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_layout.addRow("방법:", self._method_combo)
 
@@ -84,9 +86,11 @@ class ReducePanel(QWidget):
         param_group = QGroupBox("파라미터")
         param_layout = QVBoxLayout(param_group)
         self._param_stack = QStackedWidget()
-        self._param_stack.addWidget(self._build_pod_params())       # POD
-        self._param_stack.addWidget(self._build_rand_pod_params())  # Randomized POD
-        self._param_stack.addWidget(self._build_dmd_params())       # DMD
+        self._param_stack.addWidget(self._build_pod_params())              # POD
+        self._param_stack.addWidget(self._build_rand_pod_params())         # Randomized POD
+        self._param_stack.addWidget(self._build_incremental_pod_params())  # Incremental POD
+        self._param_stack.addWidget(self._build_mrpod_params())            # MRPOD
+        self._param_stack.addWidget(self._build_dmd_params())              # DMD
         param_layout.addWidget(self._param_stack)
         left_layout.addWidget(param_group)
 
@@ -187,6 +191,40 @@ class ReducePanel(QWidget):
         form.addRow("Δt (s):", dt)
         return w
 
+    def _build_incremental_pod_params(self) -> QWidget:
+        w = QWidget()
+        form = QFormLayout(w)
+        form.setContentsMargins(4, 4, 4, 4)
+        n_modes = QSpinBox()
+        n_modes.setRange(1, 9999)
+        n_modes.setValue(20)
+        n_modes.setObjectName("n_modes")
+        form.addRow("모드 수:", n_modes)
+        forget = QDoubleSpinBox()
+        forget.setRange(0.1, 1.0)
+        forget.setSingleStep(0.05)
+        forget.setValue(1.0)
+        forget.setDecimals(2)
+        forget.setObjectName("forget_factor")
+        form.addRow("Forget factor:", forget)
+        return w
+
+    def _build_mrpod_params(self) -> QWidget:
+        w = QWidget()
+        form = QFormLayout(w)
+        form.setContentsMargins(4, 4, 4, 4)
+        n_scales = QSpinBox()
+        n_scales.setRange(1, 10)
+        n_scales.setValue(3)
+        n_scales.setObjectName("n_scales")
+        form.addRow("스케일 수:", n_scales)
+        n_modes = QSpinBox()
+        n_modes.setRange(1, 9999)
+        n_modes.setValue(10)
+        n_modes.setObjectName("n_modes_per_scale")
+        form.addRow("스케일당 모드:", n_modes)
+        return w
+
     # ──────────────────────────────────────────────────────────────────
     # 공개 API
     # ──────────────────────────────────────────────────────────────────
@@ -223,6 +261,10 @@ class ReducePanel(QWidget):
                 self._run_pod(snapshots)
             elif method_idx == 1:
                 self._run_rand_pod(snapshots)
+            elif method_idx == 2:
+                self._run_incremental_pod(snapshots)
+            elif method_idx == 3:
+                self._run_mrpod(snapshots)
             else:
                 self._run_dmd(snapshots)
         except Exception as exc:
@@ -325,7 +367,7 @@ class ReducePanel(QWidget):
     def _run_dmd(self, snapshots: np.ndarray) -> None:
         from naviertwin.core.flow_analysis.modal.dmd import DMDAnalyzer
 
-        page = self._param_stack.widget(2)
+        page = self._param_stack.widget(4)
         combos = page.findChildren(QComboBox)
         spins = page.findChildren(QDoubleSpinBox)
         method = combos[0].currentText() if combos else "fbdmd"
@@ -359,6 +401,92 @@ class ReducePanel(QWidget):
             "dataset_id": id(self._dataset) if self._dataset is not None else None,
         }
         self.reduction_done.emit("dmd", analyzer)
+
+    def _run_incremental_pod(self, snapshots: np.ndarray) -> None:
+        from naviertwin.core.dimensionality_reduction.linear.incremental_pod import (
+            IncrementalPOD,
+        )
+
+        page = self._param_stack.widget(2)
+        n_modes_spin = page.findChild(QSpinBox, "n_modes")
+        forget_spin = page.findChild(QDoubleSpinBox, "forget_factor")
+        n_modes = n_modes_spin.value() if n_modes_spin else 20
+        forget_factor = forget_spin.value() if forget_spin else 1.0
+
+        reducer = IncrementalPOD(n_modes=min(n_modes, snapshots.shape[1]), forget_factor=forget_factor)
+        reducer.fit(snapshots)
+        energy = reducer.energy_ratio
+
+        self._reducer = reducer
+        reducer.training_metadata = {
+            "dataset_id": id(self._dataset) if self._dataset is not None else None,
+            "field_name": self._active_field,
+            "n_modes": int(getattr(reducer, "n_components", n_modes)),
+            "method": "incremental_pod",
+        }
+        coeffs = reducer.encode(snapshots)
+        params = (
+            np.asarray(self._dataset.time_steps[: coeffs.shape[0]], dtype=float)
+            if self._dataset is not None and len(self._dataset.time_steps) >= coeffs.shape[0]
+            else np.arange(coeffs.shape[0], dtype=float)
+        )
+        self._reduction_artifact = {
+            "method": "incremental_pod",
+            "field_name": self._active_field,
+            "snapshots": snapshots,
+            "coeffs": coeffs,
+            "params": params.reshape(-1, 1),
+            "dataset_id": id(self._dataset) if self._dataset is not None else None,
+        }
+        msg = (
+            f"Incremental POD 완료\n"
+            f"  modes: {reducer.n_components}, forget_factor: {forget_factor}\n"
+        )
+        self._result_text.append(msg)
+        self._update_energy_plot(np.asarray(energy, dtype=float))
+        self.reduction_done.emit("incremental_pod", reducer)
+
+    def _run_mrpod(self, snapshots: np.ndarray) -> None:
+        from naviertwin.core.dimensionality_reduction.linear.mrpod import MRPOD
+
+        page = self._param_stack.widget(3)
+        n_scales_spin = page.findChild(QSpinBox, "n_scales")
+        n_modes_spin = page.findChild(QSpinBox, "n_modes_per_scale")
+        n_scales = n_scales_spin.value() if n_scales_spin else 3
+        n_modes = n_modes_spin.value() if n_modes_spin else 10
+
+        reducer = MRPOD(n_scales=n_scales, n_modes_per_scale=min(n_modes, snapshots.shape[1]))
+        reducer.fit(snapshots)
+        energy = reducer.get_energy_fraction()
+
+        self._reducer = reducer
+        reducer.training_metadata = {
+            "dataset_id": id(self._dataset) if self._dataset is not None else None,
+            "field_name": self._active_field,
+            "n_modes": int(getattr(reducer, "n_components", n_scales * n_modes)),
+            "method": "mrpod",
+        }
+        coeffs = reducer.encode(snapshots)
+        params = (
+            np.asarray(self._dataset.time_steps[: coeffs.shape[0]], dtype=float)
+            if self._dataset is not None and len(self._dataset.time_steps) >= coeffs.shape[0]
+            else np.arange(coeffs.shape[0], dtype=float)
+        )
+        self._reduction_artifact = {
+            "method": "mrpod",
+            "field_name": self._active_field,
+            "snapshots": snapshots,
+            "coeffs": coeffs,
+            "params": params.reshape(-1, 1),
+            "dataset_id": id(self._dataset) if self._dataset is not None else None,
+        }
+        msg = (
+            f"MRPOD 완료\n"
+            f"  scales: {n_scales}, modes/scale: {n_modes}, total_modes: {reducer.n_components}\n"
+        )
+        self._result_text.append(msg)
+        self._update_energy_plot(np.asarray(energy, dtype=float))
+        self.reduction_done.emit("mrpod", reducer)
 
     def _update_energy_plot(self, energy: np.ndarray) -> None:
         """에너지 누적 곡선을 텍스트로 표시한다."""

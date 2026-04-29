@@ -13,27 +13,45 @@ from __future__ import annotations
 
 import json
 import zipfile
+from hashlib import sha256
 from pathlib import Path
-
-from naviertwin.utils.dataset_cas import cas_hash_file
+from typing import Any
 
 
 def zip_artifacts(
     files: list[str | Path], out_path: str | Path,
     *, manifest_name: str = "MANIFEST.json",
 ) -> Path:
+    """Zip artifacts and write an integrity manifest.
+
+    Manifest entries contain:
+    - ``name``: archived filename
+    - ``bytes``: file size in bytes
+    - ``sha256``: SHA-256 of archived bytes
+    """
     out = Path(out_path)
-    manifest = []
+    manifest: list[dict[str, Any]] = []
     with zipfile.ZipFile(out, "w") as zf:
         for f in files:
             fp = Path(f)
-            zf.write(fp, arcname=fp.name)
-            manifest.append({"name": fp.name, "sha256": cas_hash_file(fp)})
+            data = fp.read_bytes()
+            zf.writestr(fp.name, data)
+            manifest.append(
+                {
+                    "name": fp.name,
+                    "bytes": len(data),
+                    "sha256": sha256(data).hexdigest(),
+                }
+            )
         zf.writestr(manifest_name, json.dumps(manifest, indent=2))
     return out
 
 
-def read_manifest(zip_path: str | Path, *, manifest_name: str = "MANIFEST.json") -> list[dict]:
+def read_manifest(
+    zip_path: str | Path,
+    *,
+    manifest_name: str = "MANIFEST.json",
+) -> list[dict[str, Any]]:
     with zipfile.ZipFile(zip_path) as zf:
         return json.loads(zf.read(manifest_name))
 

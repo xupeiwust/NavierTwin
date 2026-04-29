@@ -11,6 +11,7 @@ GUI 툴입니다.
    overview
    installation
    quickstart
+   cli
    gui
 
 .. toctree::

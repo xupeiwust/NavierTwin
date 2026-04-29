@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
-import os
 import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _read_project_version() -> str:
+    """Read the package version without importing the package."""
+    pyproject = ROOT / "pyproject.toml"
+    for line in pyproject.read_text(encoding="utf-8").splitlines():
+        if line.startswith("version = "):
+            return line.split("=", 1)[1].strip().strip('"')
+    raise RuntimeError("Could not find project.version in pyproject.toml")
+
 
 # src/ 를 path 에 추가 — editable install 안 되어 있어도 API 문서화
-sys.path.insert(0, os.path.abspath("../../src"))
+sys.path.insert(0, str(ROOT / "src"))
 
 # -- Project info ----------------------------------------------------------
 project = "NavierTwin"
@@ -16,7 +28,7 @@ copyright = "2026, NavierTwin Contributors"
 try:
     from naviertwin import __version__ as release
 except ImportError:
-    release = "4.2.58"
+    release = _read_project_version()
 
 version = ".".join(release.split(".")[:2])
 

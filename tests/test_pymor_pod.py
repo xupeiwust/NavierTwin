@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pytest
 
-pytest.importorskip("pymor", reason="pymor 필요")
+pytestmark = pytest.mark.optional
+
+
+def _require_pymor_enabled() -> None:
+    """Guard pyMOR tests because importing pyMOR can initialize MPI."""
+    if os.environ.get("NAVIER_TWIN_RUN_PYMOR") != "1":
+        pytest.skip("pyMOR optional tests require NAVIER_TWIN_RUN_PYMOR=1")
+    pytest.importorskip("pymor", reason="pymor 필요")
 
 
 class TestPymorPOD:
     def test_basis_shapes(self) -> None:
+        _require_pymor_enabled()
         from naviertwin.core.dimensionality_reduction.linear.pymor_pod import pymor_pod
 
         rng = np.random.default_rng(0)
@@ -22,6 +32,7 @@ class TestPymorPOD:
         assert all(svals[i] >= svals[i + 1] for i in range(len(svals) - 1))
 
     def test_orthonormal_basis(self) -> None:
+        _require_pymor_enabled()
         from naviertwin.core.dimensionality_reduction.linear.pymor_pod import pymor_pod
 
         rng = np.random.default_rng(0)
@@ -33,6 +44,7 @@ class TestPymorPOD:
 
 class TestPymorDEIM:
     def test_interpolation_indices(self) -> None:
+        _require_pymor_enabled()
         from naviertwin.core.dimensionality_reduction.linear.pymor_pod import pymor_deim
 
         rng = np.random.default_rng(0)
@@ -49,6 +61,7 @@ class TestPymorDEIM:
 
 class TestGramSchmidt:
     def test_orthogonal(self) -> None:
+        _require_pymor_enabled()
         from naviertwin.core.dimensionality_reduction.linear.pymor_pod import (
             pymor_gram_schmidt,
         )

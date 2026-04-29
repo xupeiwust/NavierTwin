@@ -18,10 +18,14 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import os
+import tempfile
 from pathlib import Path
 
-_LOG_DIR = Path.home() / ".naviertwin" / "logs"
-_LOG_FILE = _LOG_DIR / "naviertwin.log"
+_LOG_DIR_ENV = "NAVIER_TWIN_LOG_DIR"
+_DEFAULT_LOG_DIR = Path.home() / ".naviertwin" / "logs"
+_FALLBACK_LOG_DIR = Path(tempfile.gettempdir()) / "naviertwin" / "logs"
+_LOG_FILE_NAME = "naviertwin.log"
 _MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 _BACKUP_COUNT = 3
 _FMT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -29,6 +33,41 @@ _DATE_FMT = "%Y-%m-%d %H:%M:%S"
 
 # 루트 로거 중복 핸들러 방지용 플래그
 _root_configured: bool = False
+
+
+def _candidate_log_dirs() -> list[Path]:
+    """Return log directories in priority order."""
+    configured = os.environ.get(_LOG_DIR_ENV)
+    if configured:
+        return [Path(configured).expanduser()]
+    return [_DEFAULT_LOG_DIR, _FALLBACK_LOG_DIR]
+
+
+def _build_file_handler(formatter: logging.Formatter) -> logging.Handler | None:
+    """Create a rotating file handler, falling back to temp when needed."""
+    last_error: OSError | None = None
+    for log_dir in _candidate_log_dirs():
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                filename=log_dir / _LOG_FILE_NAME,
+                maxBytes=_MAX_BYTES,
+                backupCount=_BACKUP_COUNT,
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            last_error = exc
+            continue
+
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        return file_handler
+
+    if last_error is not None:
+        logging.getLogger("naviertwin").debug(
+            "로그 파일 핸들러를 열 수 없습니다: %s", last_error
+        )
+    return None
 
 
 def _configure_root_logger(level: int = logging.DEBUG) -> None:
@@ -53,19 +92,9 @@ def _configure_root_logger(level: int = logging.DEBUG) -> None:
     root.addHandler(stream_handler)
 
     # --- Rotating File 핸들러 ---
-    try:
-        _LOG_DIR.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.handlers.RotatingFileHandler(
-            filename=_LOG_FILE,
-            maxBytes=_MAX_BYTES,
-            backupCount=_BACKUP_COUNT,
-            encoding="utf-8",
-        )
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(formatter)
+    file_handler = _build_file_handler(formatter)
+    if file_handler is not None:
         root.addHandler(file_handler)
-    except OSError as exc:
-        root.warning("로그 파일 핸들러를 열 수 없습니다: %s", exc)
 
     # 상위 로거(root)로 전파 방지 (중복 출력 억제)
     root.propagate = False

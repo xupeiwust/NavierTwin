@@ -8,7 +8,7 @@
 ## 1. 개요
 
 CFD 후처리 결과 데이터 → AI/ROM/Operator Learning → 디지털 트윈 변환 Windows 데스크톱 툴.
-비상업용(오픈소스). PySide6 GUI + PyVista 3D + 로컬 GPU 학습. 타겟: 엔지니어 일반 사용자.
+MIT 오픈소스 core. PySide6 GUI + PyVista 3D + 로컬 GPU 학습. 타겟: 엔지니어 일반 사용자.
 
 ---
 
@@ -391,7 +391,7 @@ NavierTwin/
 
 ## 7. 설계 원칙
 
-- **라이선스 정책:** NavierTwin은 GPL-3.0 비상업용 오픈소스. GPL/LGPL 라이브러리 모두 사용 가능. 무거운 선택적 의존성(Gmsh, SU2, FEniCSx 계열, PySR)은 `pip install naviertwin[full]` 등 optional extra로 분리.
+- **라이선스 정책:** NavierTwin core는 MIT 오픈소스이며 상업적 이용이 가능하다. GPL/LGPL·무거운 선택적 의존성(Gmsh, SU2, FEniCSx 계열, PySR 등)은 `pip install naviertwin[full]` 등 optional extra 또는 외부 실행 경로로 분리한다.
 - **팩토리 패턴 통일:** Reader, 차원축소, Surrogate, Operator 모두 통일 인터페이스 (`fit/predict` 또는 `fit/encode/decode`)
 - **core↔gui 분리:** core 모듈은 Qt 의존 금지. GUI는 시그널/슬롯으로 core와 통신
 - **프로젝트 파일 (.ntwin):** HDF5 기반 세션 저장/복원, 모델 가중치+설정 이력 포함

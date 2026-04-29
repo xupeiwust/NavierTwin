@@ -65,6 +65,44 @@ class TestPipeline:
         with pytest.raises(ValueError, match="reducer"):
             pipe.reduce()
 
+    def test_end_to_end_incremental_pod_rbf(self) -> None:
+        pytest.importorskip("sklearn")
+        from naviertwin.core.digital_twin.pipeline import NavierTwinPipeline
+
+        rng = np.random.default_rng(1)
+        n_modes = 3
+        U = rng.standard_normal((30, n_modes))
+        V = rng.standard_normal((n_modes, 16))
+        X = U @ V + 0.01 * rng.standard_normal((30, 16))
+
+        pipe = NavierTwinPipeline(
+            reducer_kind="incremental_pod", n_modes=n_modes, surrogate_kind="rbf"
+        )
+        pipe.load_snapshots(X, field_name="U")
+        pipe.reduce()
+        params = np.linspace(0, 1, 16).reshape(-1, 1)
+        pipe.fit_surrogate(params)
+        field = pipe.predict_field(np.array([[0.5]]))
+        assert field.shape[0] == 30
+
+    def test_end_to_end_mrpod_rbf(self) -> None:
+        pytest.importorskip("sklearn")
+        from naviertwin.core.digital_twin.pipeline import NavierTwinPipeline
+
+        rng = np.random.default_rng(2)
+        n_modes = 2
+        U = rng.standard_normal((28, n_modes))
+        V = rng.standard_normal((n_modes, 14))
+        X = U @ V + 0.01 * rng.standard_normal((28, 14))
+
+        pipe = NavierTwinPipeline(reducer_kind="mrpod", n_modes=n_modes, surrogate_kind="rbf")
+        pipe.load_snapshots(X, field_name="U")
+        pipe.reduce()
+        params = np.linspace(0, 1, 14).reshape(-1, 1)
+        pipe.fit_surrogate(params)
+        field = pipe.predict_field(np.array([[0.3]]))
+        assert field.shape[0] == 28
+
 
 class TestModelCompareWidget:
     def test_import_only(self) -> None:

@@ -104,33 +104,50 @@ class TestEntropyGeneration:
 class TestFastAPI:
     def test_create_app_and_endpoints(self) -> None:
         fastapi = pytest.importorskip("fastapi")
-        del fastapi
-        from fastapi.testclient import TestClient
-
-        from naviertwin.api.server import create_app
+        HTTPException = fastapi.HTTPException
+        from naviertwin import __version__
+        from naviertwin.api.server import CouetteReq, PODReq, create_app
 
         app = create_app()
-        client = TestClient(app)
+        assert app.version == __version__
+        route_map = {
+            route.path: route.endpoint
+            for route in app.routes
+            if hasattr(route, "path") and hasattr(route, "endpoint")
+        }
 
         # health
-        r = client.get("/health")
-        assert r.status_code == 200
-        assert r.json()["status"] == "ok"
+        health = route_map["/health"]()
+        assert health["status"] == "ok"
 
         # 해석해
-        r = client.post(
-            "/analytic/couette",
-            json={"U_top": 1.0, "H": 1.0, "n_points": 10},
+        couette = route_map["/analytic/couette"](
+            CouetteReq(U_top=1.0, H=1.0, n_points=10)
         )
-        assert r.status_code == 200
-        body = r.json()
-        assert len(body["velocity"]) == 10
-        assert body["velocity"][-1] == pytest.approx(1.0, rel=1e-6)
+        assert len(couette["velocity"]) == 10
+        assert couette["velocity"][-1] == pytest.approx(1.0, rel=1e-6)
 
         # POD
         X = np.random.default_rng(0).standard_normal((20, 15)).tolist()
-        r = client.post(
-            "/reduce/pod", json={"snapshots": X, "n_modes": 3}
+        pod = route_map["/reduce/pod"](PODReq(snapshots=X, n_modes=3))
+        assert pod["n_modes"] == 3
+
+        # Generic reduce endpoint (incremental_pod)
+        inc = route_map["/reduce"](
+            PODReq(snapshots=X, n_modes=3, reducer_kind="incremental_pod")
         )
-        assert r.status_code == 200
-        assert r.json()["n_modes"] == 3
+        assert inc["reducer_kind"] == "incremental_pod"
+        assert inc["n_modes"] == 3
+
+        # Generic reduce endpoint (mrpod)
+        mr = route_map["/reduce"](
+            PODReq(snapshots=X, n_modes=2, reducer_kind="mrpod")
+        )
+        assert mr["reducer_kind"] == "mrpod"
+        assert mr["n_modes"] == 6  # 3 scales × 2 modes/scale
+
+        with pytest.raises(HTTPException, match="unknown reducer_kind"):
+            route_map["/reduce"](
+                PODReq(snapshots=X, n_modes=2, reducer_kind="unknown")
+            )
+        assert "/simulate/lbm_cavity" in route_map

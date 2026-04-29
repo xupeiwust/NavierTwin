@@ -13,6 +13,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 from naviertwin import __version__
@@ -27,7 +28,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="naviertwin",
         description=(
-            "NavierTwin — CFD 후처리 결과를 AI/ROM 디지털 트윈으로 변환하는 툴\n"
+            "NavierTwin - CFD 후처리 결과를 AI/ROM 디지털 트윈으로 변환하는 툴\n"
             f"버전: {__version__}"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -73,6 +74,75 @@ def _build_parser() -> argparse.ArgumentParser:
     p_pipe.add_argument("--n-modes", type=int, default=5)
     p_pipe.add_argument("--reducer", choices=["pod", "ae"], default="pod")
     p_pipe.add_argument("--surrogate", choices=["kriging", "rbf"], default="kriging")
+
+    # pipeline-demo
+    p_demo = sub.add_parser("pipeline-demo", help="합성 데모를 실행하고 리포트 산출물 저장")
+    p_demo.add_argument("--outdir", required=True, help="metrics.json/report.html 출력 디렉토리")
+    p_demo.add_argument("--n-modes", type=int, default=3)
+    p_demo.add_argument("--surrogate", choices=["kriging", "rbf"], default="rbf")
+
+    # preflight
+    p_preflight = sub.add_parser("preflight", help="CFD 입력 데이터 readiness 점검")
+    p_preflight.add_argument("path", help="점검할 CFD 파일 또는 케이스 디렉토리")
+    p_preflight.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
+    p_preflight.add_argument("--output", default=None, metavar="PATH", help="readiness JSON 리포트 저장 경로")
+
+    # support-bundle
+    p_support = sub.add_parser("support-bundle", help="고객 지원용 진단 번들 생성")
+    p_support.add_argument("--outdir", required=True, help="지원 번들 출력 디렉토리")
+    p_support.add_argument("--preflight", default=None, help="선택적으로 readiness 점검할 CFD 입력 경로")
+    p_support.add_argument(
+        "--zip",
+        dest="zip_bundle",
+        action="store_true",
+        default=False,
+        help="지원 번들 디렉토리를 유지하면서 support-bundle.zip을 추가 생성",
+    )
+    p_support.add_argument(
+        "--include-optional",
+        action="store_true",
+        default=False,
+        help="doctor 리포트에 GUI/API/GPU 선택 의존성 점검 포함",
+    )
+
+    # autorefine
+    p_refine = sub.add_parser(
+        "autorefine",
+        help="ROADMAP를 주기 분석해 자동으로 완료 가능한 항목을 반영",
+    )
+    p_refine.add_argument("--interval-sec", type=int, default=60)
+    p_refine.add_argument("--iterations", type=int, default=1)
+    p_refine.add_argument("--dry-run", action="store_true", default=False)
+    p_refine.add_argument(
+        "--project-root",
+        default=".",
+        help="프로젝트 루트 경로 (기본값: 현재 디렉토리)",
+    )
+    p_refine.add_argument(
+        "--artifact-dir",
+        default=None,
+        help="리포트 출력 디렉토리 (기본값: <root>/verify_artifacts/autorefine)",
+    )
+
+    # update-check
+    p_update = sub.add_parser(
+        "update-check",
+        help="로컬 릴리스 메타데이터로 업데이트 가능 여부 확인",
+    )
+    p_update.add_argument("--metadata", required=True, help="릴리스 메타데이터 JSON 경로")
+    p_update.add_argument("--channel", default="stable", choices=["stable", "beta", "nightly"])
+    p_update.add_argument("--current-version", default=__version__)
+
+    # doctor
+    p_doctor = sub.add_parser("doctor", help="설치/런타임 환경 진단 리포트 출력")
+    p_doctor.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
+    p_doctor.add_argument("--output", default=None, metavar="PATH", help="진단 리포트 저장 경로")
+    p_doctor.add_argument(
+        "--include-optional",
+        action="store_true",
+        default=False,
+        help="GUI/API/GPU 선택 의존성까지 점검",
+    )
 
     return parser
 
@@ -131,6 +201,51 @@ def main() -> None:
         sys.exit(_run_server(args.host, args.port))
     elif args.command == "pipeline":
         sys.exit(_run_pipeline(args.reducer, args.n_modes, args.surrogate))
+    elif args.command == "pipeline-demo":
+        sys.exit(
+            _run_pipeline_demo(
+                outdir=args.outdir,
+                n_modes=args.n_modes,
+                surrogate=args.surrogate,
+            )
+        )
+    elif args.command == "preflight":
+        sys.exit(_run_preflight(path=args.path, as_json=args.as_json, output=args.output))
+    elif args.command == "support-bundle":
+        sys.exit(
+            _run_support_bundle(
+                outdir=args.outdir,
+                preflight=args.preflight,
+                include_optional=args.include_optional,
+                zip_bundle=args.zip_bundle,
+            )
+        )
+    elif args.command == "autorefine":
+        sys.exit(
+            _run_autorefine(
+                interval_sec=args.interval_sec,
+                iterations=args.iterations,
+                apply=not args.dry_run,
+                project_root=args.project_root,
+                artifact_dir=args.artifact_dir,
+            )
+        )
+    elif args.command == "update-check":
+        sys.exit(
+            _run_update_check(
+                metadata=args.metadata,
+                channel=args.channel,
+                current_version=args.current_version,
+            )
+        )
+    elif args.command == "doctor":
+        sys.exit(
+            _run_doctor(
+                as_json=args.as_json,
+                include_optional=args.include_optional,
+                output=args.output,
+            )
+        )
     else:
         parser.print_help()
         sys.exit(0)
@@ -193,6 +308,195 @@ def _run_pipeline(reducer: str, n_modes: int, surrogate: str) -> int:
     metrics = pipe.validate(params[-5:], pipe.state.coeffs[-5:])
     print(f"파이프라인 완료: {metrics}")
     return 0
+
+
+def _run_pipeline_demo(*, outdir: str, n_modes: int, surrogate: str) -> int:
+    """합성 데이터 기반 첫 실행 데모를 수행하고 산출물을 저장한다."""
+    from pathlib import Path
+
+    output_dir = Path(outdir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import numpy as np
+
+        from naviertwin.core.digital_twin.pipeline import NavierTwinPipeline
+
+        rng = np.random.default_rng(42)
+        rank = max(1, n_modes)
+        n_features = 48
+        n_snapshots = 24
+        params = np.linspace(0, 1, n_snapshots).reshape(-1, 1)
+        t = params[:, 0]
+        basis = rng.standard_normal((n_features, rank))
+        coeff_rows = []
+        for mode in range(rank):
+            frequency = mode + 1
+            if mode % 3 == 0:
+                coeff_rows.append(np.sin(frequency * np.pi * t))
+            elif mode % 3 == 1:
+                coeff_rows.append(np.cos(frequency * np.pi * t))
+            else:
+                coeff_rows.append((t - 0.5) ** frequency)
+        coeffs = np.vstack(coeff_rows)
+        snapshots = basis @ coeffs + 0.005 * rng.standard_normal((n_features, n_snapshots))
+
+        pipe = NavierTwinPipeline(
+            reducer_kind="pod",
+            n_modes=rank,
+            surrogate_kind=surrogate,
+        )
+        pipe.load_snapshots(snapshots, field_name="U")
+        pipe.reduce()
+        pipe.fit_surrogate(params)
+        metrics = pipe.validate(params[-6:], pipe.state.coeffs[-6:])
+
+        metrics_path = output_dir / "metrics.json"
+        report_path = output_dir / "report.html"
+        payload = {
+            "status": "ok",
+            "artifacts": {
+                "metrics": str(metrics_path),
+                "report": str(report_path),
+            },
+            "demo": {
+                "reducer": "pod",
+                "surrogate": surrogate,
+                "n_modes": rank,
+                "n_features": n_features,
+                "n_snapshots": n_snapshots,
+            },
+            "metrics": metrics,
+        }
+        metrics_path.write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        pipe.export_report(str(report_path), project="NavierTwin Pipeline Demo")
+    except ImportError as exc:
+        print(
+            "pipeline-demo error: missing optional dependency. "
+            "Install with pip install 'naviertwin[core]'. "
+            f"Details: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _run_preflight(*, path: str, as_json: bool, output: str | None = None) -> int:
+    """CFD 입력 데이터 readiness 리포트를 출력한다."""
+    from pathlib import Path
+
+    from naviertwin.core.validation.dataset_preflight import (
+        build_dataset_preflight_report,
+        format_preflight_report,
+        report_to_json,
+    )
+
+    report = build_dataset_preflight_report(path)
+    json_report = report_to_json(report)
+    if output:
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json_report + "\n", encoding="utf-8")
+    print(json_report if as_json else format_preflight_report(report))
+    return 1 if report.get("status") == "error" else 0
+
+
+def _run_support_bundle(
+    *,
+    outdir: str,
+    preflight: str | None,
+    include_optional: bool,
+    zip_bundle: bool,
+) -> int:
+    """고객 지원용 진단 번들을 생성한다."""
+    from naviertwin.utils.support_bundle import build_support_bundle, report_to_json
+
+    try:
+        report = build_support_bundle(
+            outdir=outdir,
+            preflight=preflight,
+            include_optional=include_optional,
+            zip_bundle=zip_bundle,
+        )
+    except OSError as exc:
+        print(f"support-bundle error: {exc}", file=sys.stderr)
+        return 2
+    print(report_to_json(report))
+    return 0
+
+
+def _run_autorefine(
+    *,
+    interval_sec: int,
+    iterations: int,
+    apply: bool,
+    project_root: str,
+    artifact_dir: str | None,
+) -> int:
+    """ROADMAP 자동 고도화 루프 실행."""
+    from naviertwin.utils.workflow.autorefine import run_autorefine_loop
+
+    reports = run_autorefine_loop(
+        project_root=project_root,
+        interval_sec=interval_sec,
+        iterations=iterations,
+        apply=apply,
+        artifact_dir=artifact_dir,
+    )
+    if not reports:
+        print("autorefine: 실행 결과가 없습니다.")
+        return 1
+    last = reports[-1]
+    print(
+        "autorefine 완료: "
+        f"pending={last['pending_count']}, "
+        f"auto_candidates={last['auto_candidate_count']}, "
+        f"applied={last['applied_count']}"
+    )
+    return 0
+
+
+def _run_update_check(*, metadata: str, channel: str, current_version: str) -> int:
+    """로컬 릴리스 메타데이터를 사용해 업데이트 가능 여부를 출력한다."""
+    from pathlib import Path
+
+    from naviertwin.utils.updater import check_for_update
+
+    try:
+        result = check_for_update(
+            Path(metadata),
+            channel=channel,
+            current_version=current_version,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"update-check error: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _run_doctor(*, as_json: bool, include_optional: bool, output: str | None = None) -> int:
+    """설치/런타임 환경 진단 리포트를 출력한다."""
+    from pathlib import Path
+
+    from naviertwin.utils.doctor import (
+        build_doctor_report,
+        format_doctor_report,
+        report_to_json,
+    )
+
+    report = build_doctor_report(include_optional=include_optional)
+    json_report = report_to_json(report)
+    if output:
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json_report + "\n", encoding="utf-8")
+    print(json_report if as_json else format_doctor_report(report))
+    return 1 if report.get("status") == "error" else 0
 
 
 if __name__ == "__main__":

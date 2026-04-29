@@ -62,8 +62,14 @@ class MainWindow(QMainWindow):
     TwinEngine)를 시그널/슬롯으로 전달한다.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        *,
+        confirm_on_close: bool = True,
+    ) -> None:
         super().__init__(parent)
+        self._confirm_on_close = confirm_on_close
         self.setWindowTitle("NavierTwin — CFD Digital Twin")
         self.setMinimumSize(1280, 800)
         self.resize(1440, 900)
@@ -126,6 +132,14 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001
             self._simulation_panel = None
 
+        # Post-Processor Tools 패널 — R591-647 신규 모듈 통합
+        try:
+            from naviertwin.gui.panels.postproc_panel import PostProcessPanel
+
+            self._postproc_panel = PostProcessPanel()
+        except Exception:  # noqa: BLE001
+            self._postproc_panel = None
+
         self._tabs.addTab(self._import_panel,  f"① {self._t('panel.import')}")
         self._tabs.addTab(self._analyze_panel, f"② {self._t('panel.analyze')}")
         self._tabs.addTab(self._reduce_panel,  f"③ {self._t('panel.reduce')}")
@@ -136,6 +150,8 @@ class MainWindow(QMainWindow):
             self._tabs.addTab(self._compare_panel, "⑦ Compare")
         if self._simulation_panel is not None:
             self._tabs.addTab(self._simulation_panel, "⑧ Simulation")
+        if self._postproc_panel is not None:
+            self._tabs.addTab(self._postproc_panel, "⑨ Post-Tools")
 
         vbox.addWidget(self._tabs)
 
@@ -373,7 +389,7 @@ class MainWindow(QMainWindow):
             "NavierTwin 정보",
             f"<h3>NavierTwin v{__version__}</h3>"
             "<p>CFD 후처리 결과를 AI/ROM 디지털 트윈으로 변환하는 오픈소스 툴.</p>"
-            "<p>License: GPL-3.0</p>"
+            "<p>License: MIT</p>"
             "<p>Python 3.10+ | PySide6 | PyVista | PyTorch</p>",
         )
 
@@ -410,6 +426,10 @@ class MainWindow(QMainWindow):
         return normalized
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if not self._confirm_on_close:
+            event.accept()
+            return
+
         reply = QMessageBox.question(
             self,
             "종료 확인",
