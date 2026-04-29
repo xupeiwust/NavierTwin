@@ -46,6 +46,8 @@ class ExportPanel(QWidget):
         super().__init__(parent)
         self._dataset: Optional[CFDDataset] = None
         self._engine: Optional[object] = None
+        self._model_artifact: Optional[object] = None
+        self._model_sample_input: Optional[object] = None
         self._setup_ui()
 
     # ──────────────────────────────────────────────────────────────────
@@ -88,6 +90,8 @@ class ExportPanel(QWidget):
             ".vtk (레거시 VTK)",
             ".csv (점 데이터)",
             ".html/.pdf (고객 보고서)",
+            ".onnx (ONNX PyTorch 모델)",
+            ".pt (TorchScript 모델)",
         ])
         self._format_combo.currentIndexChanged.connect(self._on_format_changed)
         options_form.addRow("포맷:", self._format_combo)
@@ -152,7 +156,15 @@ class ExportPanel(QWidget):
     def set_engine(self, engine: object) -> None:
         """내보낼 TwinEngine을 설정한다."""
         self._engine = engine
+        self._model_artifact = engine
+        self._model_sample_input = None
         self._log(f"TwinEngine 설정: {type(engine).__name__}")
+
+    def set_model(self, model: object, sample_input: object | None = None) -> None:
+        """ONNX/TorchScript로 내보낼 PyTorch 모델 산출물을 설정한다."""
+        self._model_artifact = model
+        self._model_sample_input = sample_input
+        self._log(f"모델 산출물 설정: {type(model).__name__}")
 
     def load_project_path(self, path: Path) -> bool:
         """지정한 .ntwin 프로젝트 파일을 로드하고 workflow 복원 신호를 발생시킨다."""
@@ -198,6 +210,8 @@ class ExportPanel(QWidget):
             "VTK Legacy (*.vtk)",
             "CSV (*.csv)",
             "Report (*.html *.pdf)",
+            "ONNX Model (*.onnx)",
+            "TorchScript Model (*.pt)",
         ]
         path, _ = QFileDialog.getSaveFileName(self, "저장 경로 선택", "", filters[fmt_idx])
         if path:
@@ -224,8 +238,12 @@ class ExportPanel(QWidget):
                 self._export_vtk(path)
             elif fmt_idx == 3:
                 self._export_csv(path)
-            else:
+            elif fmt_idx == 4:
                 self._export_report(path)
+            elif fmt_idx == 5:
+                self._export_onnx(path)
+            else:
+                self._export_torchscript(path)
         except Exception as exc:
             self._log(f"[ERROR] 내보내기 실패: {exc}")
 
@@ -308,6 +326,131 @@ class ExportPanel(QWidget):
             out = generator.render_html(data, path)
         self._log(f"✓ 보고서 저장: {out}")
         self.export_done.emit(str(out))
+
+    def _export_onnx(self, path: Path) -> None:
+        if path.suffix.lower() != ".onnx":
+            path = path.with_suffix(".onnx")
+        try:
+            model, sample_input = self._prepare_torch_export()
+        except RuntimeError as exc:
+            self._log(f"[WARN] {exc}")
+            return
+        out = self._export_to_onnx(model, sample_input, path)
+        self._log(f"✓ ONNX 모델 저장: {out}")
+        self.export_done.emit(str(out))
+
+    def _export_torchscript(self, path: Path) -> None:
+        if path.suffix.lower() != ".pt":
+            path = path.with_suffix(".pt")
+        try:
+            model, sample_input = self._prepare_torch_export()
+        except RuntimeError as exc:
+            self._log(f"[WARN] {exc}")
+            return
+        out = self._export_to_torchscript(model, path, sample_input)
+        self._log(f"✓ TorchScript 모델 저장: {out}")
+        self.export_done.emit(str(out))
+
+    def _prepare_torch_export(self) -> tuple[object, object]:
+        """현재 모델 산출물에서 torch.nn.Module과 trace sample을 추출한다."""
+        module, source = self._resolve_torch_module()
+        sample_input = self._resolve_sample_input(module, source)
+        return module, sample_input
+
+    def _resolve_torch_module(self) -> tuple[object, object]:
+        try:
+            import torch
+        except ImportError as exc:
+            raise RuntimeError("torch가 필요합니다.") from exc
+
+        source = self._model_artifact or self._engine
+        if source is None:
+            raise RuntimeError("내보낼 모델이 없습니다. Model 탭에서 신경 연산자를 먼저 학습하세요.")
+
+        candidates = [source]
+        for attr in ("surrogate", "model", "_model", "module", "net", "network"):
+            value = getattr(source, attr, None)
+            if value is not None:
+                candidates.append(value)
+                nested = getattr(value, "_model", None)
+                if nested is not None:
+                    candidates.append(nested)
+
+        for candidate in candidates:
+            if isinstance(candidate, torch.nn.Module):
+                return candidate, source
+        raise RuntimeError("PyTorch nn.Module을 찾을 수 없습니다.")
+
+    def _resolve_sample_input(self, module: object, source: object) -> object:
+        try:
+            import torch
+        except ImportError as exc:
+            raise RuntimeError("torch가 필요합니다.") from exc
+
+        explicit = self._model_sample_input
+        if explicit is None:
+            for owner in (source, module):
+                for attr in ("sample_input", "example_input", "example_input_array", "_sample_input"):
+                    value = getattr(owner, attr, None)
+                    if value is not None:
+                        explicit = value
+                        break
+                if explicit is not None:
+                    break
+        if explicit is not None:
+            return self._move_sample_input(explicit, module)
+
+        param = next(module.parameters(), None)  # type: ignore[attr-defined]
+        device = param.device if param is not None else torch.device("cpu")
+        dtype = param.dtype if param is not None and param.dtype.is_floating_point else torch.float32
+        name = type(source).__name__.lower()
+        in_channels = int(getattr(source, "in_channels", 1) or 1)
+
+        if "1d" in name:
+            n = max(16, int(getattr(source, "modes", 8) or 8) * 2)
+            return torch.zeros((1, n, in_channels), device=device, dtype=dtype)
+        if "2d" in name or "unet" in name or "tfno" in name:
+            return torch.zeros((1, 16, 16, in_channels), device=device, dtype=dtype)
+
+        first_linear = next(
+            (m for m in module.modules() if isinstance(m, torch.nn.Linear)),  # type: ignore[attr-defined]
+            None,
+        )
+        if first_linear is not None:
+            return torch.zeros((1, int(first_linear.in_features)), device=device, dtype=dtype)
+        raise RuntimeError("trace용 sample_input을 추론할 수 없습니다.")
+
+    def _move_sample_input(self, value: object, module: object) -> object:
+        try:
+            import torch
+        except ImportError as exc:
+            raise RuntimeError("torch가 필요합니다.") from exc
+
+        param = next(module.parameters(), None)  # type: ignore[attr-defined]
+        device = param.device if param is not None else torch.device("cpu")
+        if isinstance(value, torch.Tensor):
+            return value.to(device=device)
+        if isinstance(value, tuple):
+            return tuple(self._move_sample_input(item, module) for item in value)
+        if isinstance(value, list):
+            return tuple(self._move_sample_input(item, module) for item in value)
+        return value
+
+    def _export_to_onnx(self, model: object, sample_input: object, path: Path) -> Path:
+        from naviertwin.core.export.onnx_export import export_to_onnx
+
+        return export_to_onnx(model, sample_input, path)
+
+    def _export_to_torchscript(
+        self,
+        model: object,
+        path: Path,
+        sample_input: object,
+    ) -> Path:
+        from naviertwin.core.export.torchscript_export import export_to_torchscript
+
+        trace_input = sample_input if isinstance(sample_input, tuple) else (sample_input,)
+        return export_to_torchscript(model, path, sample_input=trace_input, mode="trace")
 
     def _save_project(self) -> None:
         path, _ = QFileDialog.getSaveFileName(

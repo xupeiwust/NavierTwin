@@ -456,6 +456,7 @@ class MainWindow(QMainWindow):
     def _on_model_trained(self, model_type: str, surrogate: object) -> None:
         if self._is_operator_model(model_type, surrogate):
             self._latest_operator = surrogate
+            self._export_panel.set_model(surrogate)
             self._set_status(
                 f"연산자 학습 완료 ({model_type}) — TwinEngine 자동 연결 생략"
             )

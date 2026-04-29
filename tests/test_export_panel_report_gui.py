@@ -51,6 +51,90 @@ def test_export_panel_report_format_visible(qtbot) -> None:
         for i in range(panel._format_combo.count())
     ]
     assert any("보고서" in item for item in formats)
+    assert any("ONNX" in item for item in formats)
+    assert any("TorchScript" in item for item in formats)
+
+
+def test_export_panel_exports_onnx_model(qtbot, tmp_path: Path, monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    from torch import nn
+
+    from naviertwin.gui.panels.export_panel import ExportPanel
+
+    panel = ExportPanel()
+    qtbot.addWidget(panel)
+    emitted: list[str] = []
+    calls: list[tuple[object, tuple[int, ...], Path]] = []
+    panel.export_done.connect(emitted.append)
+    panel.set_model(nn.Linear(3, 2), sample_input=torch.ones(1, 3))
+    panel._format_combo.setCurrentIndex(_format_index(panel, "ONNX"))
+    out = tmp_path / "model"
+    panel._path_edit.setText(str(out))
+
+    def fake_export(model: object, sample_input: object, path: Path) -> Path:
+        assert isinstance(sample_input, torch.Tensor)
+        calls.append((model, tuple(sample_input.shape), path))
+        path.write_bytes(b"onnx")
+        return path
+
+    monkeypatch.setattr(panel, "_export_to_onnx", fake_export)
+
+    panel._export()
+
+    expected = tmp_path / "model.onnx"
+    assert calls and calls[0][1] == (1, 3)
+    assert expected.exists()
+    assert emitted == [str(expected)]
+    assert "ONNX 모델 저장" in panel._log_text.toPlainText()
+
+
+def test_export_panel_exports_torchscript_model(
+    qtbot,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    torch = pytest.importorskip("torch")
+    from torch import nn
+
+    from naviertwin.gui.panels.export_panel import ExportPanel
+
+    panel = ExportPanel()
+    qtbot.addWidget(panel)
+    emitted: list[str] = []
+    calls: list[tuple[object, tuple[int, ...], Path]] = []
+    panel.export_done.connect(emitted.append)
+    panel.set_model(nn.Linear(4, 1), sample_input=torch.ones(1, 4))
+    panel._format_combo.setCurrentIndex(_format_index(panel, "TorchScript"))
+    out = tmp_path / "operator.pt"
+    panel._path_edit.setText(str(out))
+
+    def fake_export(model: object, path: Path, sample_input: object) -> Path:
+        assert isinstance(sample_input, torch.Tensor)
+        calls.append((model, tuple(sample_input.shape), path))
+        path.write_bytes(b"torchscript")
+        return path
+
+    monkeypatch.setattr(panel, "_export_to_torchscript", fake_export)
+
+    panel._export()
+
+    assert calls and calls[0][1] == (1, 4)
+    assert out.exists()
+    assert emitted == [str(out)]
+    assert "TorchScript 모델 저장" in panel._log_text.toPlainText()
+
+
+def test_export_panel_model_export_requires_torch_module(qtbot, tmp_path: Path) -> None:
+    from naviertwin.gui.panels.export_panel import ExportPanel
+
+    panel = ExportPanel()
+    qtbot.addWidget(panel)
+    panel._format_combo.setCurrentIndex(_format_index(panel, "ONNX"))
+    panel._path_edit.setText(str(tmp_path / "missing.onnx"))
+
+    panel._export()
+
+    assert "내보낼 모델이 없습니다" in panel._log_text.toPlainText()
 
 
 def test_export_panel_exports_html_report(qtbot, tmp_path: Path) -> None:
@@ -86,3 +170,11 @@ def test_export_panel_report_adds_html_suffix(qtbot, tmp_path: Path) -> None:
     panel._export()
 
     assert (tmp_path / "handoff.html").exists()
+
+
+def _format_index(panel: object, needle: str) -> int:
+    combo = panel._format_combo
+    for idx in range(combo.count()):
+        if needle in combo.itemText(idx):
+            return idx
+    raise AssertionError(f"format not found: {needle}")
