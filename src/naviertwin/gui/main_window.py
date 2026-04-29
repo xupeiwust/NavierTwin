@@ -18,6 +18,7 @@ Examples:
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Optional
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
         self._latest_reducer: object | None = None
         self._latest_surrogate: object | None = None
         self._latest_engine: object | None = None
+        self._model_compare_results: dict[str, dict[str, float]] = {}
 
         self._apply_theme()
         self._setup_panels()
@@ -174,8 +176,11 @@ class MainWindow(QMainWindow):
         self, results: dict[str, dict[str, float]]
     ) -> None:
         """외부에서 모델 비교 대시보드 갱신."""
+        self._model_compare_results = {
+            name: dict(metrics) for name, metrics in results.items()
+        }
         if self._compare_panel is not None:
-            self._compare_panel.update(results)
+            self._compare_panel.update(self._model_compare_results)
 
     def _setup_menubar(self) -> None:
         mb: QMenuBar = self.menuBar()
@@ -343,6 +348,7 @@ class MainWindow(QMainWindow):
                 self._set_status(f"모델 학습 완료 ({model_type}) — 엔진 구성 실패: {exc}")
         else:
             self._set_status(f"모델 학습 완료 ({model_type})")
+        self._record_model_comparison(model_type, surrogate)
         self._tabs.setCurrentIndex(4)
 
     def _on_project_loaded(self, dataset: object, engine: object | None) -> None:
@@ -446,6 +452,48 @@ class MainWindow(QMainWindow):
             if isinstance(key, str):
                 normalized[key] = value
         return normalized
+
+    def _record_model_comparison(self, model_type: str, model: object) -> None:
+        """학습 완료 모델의 검증 지표를 Compare 탭에 누적한다."""
+        metrics = self._extract_validation_metrics(model)
+        if metrics is None:
+            return
+        self._model_compare_results[
+            self._format_compare_model_label(model_type, model)
+        ] = metrics
+        self.update_compare_dashboard(self._model_compare_results)
+
+    def _extract_validation_metrics(self, model: object) -> dict[str, float] | None:
+        """모델 메타데이터에서 CompareWidget이 사용할 RMSE/R²를 추출한다."""
+        metadata = getattr(model, "training_metadata", None)
+        if not isinstance(metadata, Mapping):
+            return None
+        raw_metrics = metadata.get("validation_metrics")
+        if not isinstance(raw_metrics, Mapping):
+            return None
+
+        rmse = self._finite_float(raw_metrics.get("rmse"))
+        r2 = self._finite_float(raw_metrics.get("r2"))
+        if rmse is None or r2 is None:
+            return None
+        return {"rmse": rmse, "r2": r2}
+
+    @staticmethod
+    def _finite_float(value: object) -> float | None:
+        """유한한 float 값만 CompareWidget 입력으로 허용한다."""
+        try:
+            number = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
+
+    @staticmethod
+    def _format_compare_model_label(model_type: str, model: object) -> str:
+        """Compare 탭에 표시할 모델 이름을 정한다."""
+        class_name = type(model).__name__
+        if class_name and class_name != "object":
+            return class_name
+        return model_type.upper() if model_type else "Model"
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if not self._confirm_on_close:

@@ -373,10 +373,16 @@ class ModelPanel(QWidget):
 
             # 검증
             metrics_text = ""
+            validation_metrics: dict[str, float] = {}
             if len(X_test) > 0:
                 from naviertwin.core.validation.metrics import compute_all_metrics
                 Y_pred = surrogate.predict(X_test)
                 metrics = compute_all_metrics(Y_test, Y_pred)
+                validation_metrics = {
+                    k: float(v)
+                    for k, v in metrics.items()
+                    if isinstance(v, (int, float, np.floating)) and np.isfinite(float(v))
+                }
                 self._metrics_list.clear()
                 for k, v in metrics.items():
                     self._metrics_list.addItem(f"{k}: {v:.6f}")
@@ -384,6 +390,7 @@ class ModelPanel(QWidget):
             else:
                 self._metrics_list.clear()
                 self._metrics_list.addItem("테스트 셋 없음 (샘플 수 증가 필요)")
+            surrogate.training_metadata["validation_metrics"] = validation_metrics
 
             self._log(f"{model_name} 학습 완료 (n_train={n_train}){metrics_text}")
             self.model_trained.emit(model_name.lower(), surrogate)
