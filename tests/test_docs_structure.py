@@ -162,6 +162,32 @@ class TestDocsStructure:
                 "LDeepONet",
                 "PILatentNO",
             ],
+            "naviertwin.core.flow_analysis.statistics": [
+                "compute_fft",
+                "two_point_correlation",
+                "continuous_wavelet",
+            ],
+            "naviertwin.core.flow_analysis.vortex": [
+                "compute_q_criterion",
+                "compute_lambda2",
+                "compute_ftle_2d",
+            ],
+            "naviertwin.core.flow_analysis.boundary_layer": [
+                "compute_yplus",
+                "boundary_layer_thicknesses",
+                "skin_friction",
+            ],
+            "naviertwin.core.flow_analysis.thermofluids": [
+                "reynolds",
+                "prandtl",
+                "entropy_generation_2d",
+            ],
+            "naviertwin.core.flow_analysis.modal": [
+                "DMDAnalyzer",
+                "KoopmanAnalysis",
+                "compute_spod",
+                "pde_find_1d",
+            ],
         }
 
         for module_name, symbols in expected.items():
