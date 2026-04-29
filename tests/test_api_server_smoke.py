@@ -10,7 +10,7 @@ pytest.importorskip("fastapi", reason="FastAPI is required for REST API smoke te
 def test_advertised_rest_endpoints_return_json() -> None:
     import numpy as np
 
-    from naviertwin.api.server import CouetteReq, LBMReq, PODReq, create_app
+    from naviertwin.api import CouetteReq, LBMReq, PODReq, create_app
 
     app = create_app()
     route_map = {

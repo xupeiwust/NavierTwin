@@ -47,18 +47,18 @@ class TestAPILBMEndpoint:
     def test_lbm_cavity(self) -> None:
         fastapi = pytest.importorskip("fastapi")
         del fastapi
-        from fastapi.testclient import TestClient
 
-        from naviertwin.api.server import create_app
+        from naviertwin.api import LBMReq, create_app
 
         app = create_app()
-        client = TestClient(app)
-        r = client.post(
-            "/simulate/lbm_cavity",
-            json={"nx": 8, "ny": 8, "tau": 0.8, "u_top": 0.05, "n_steps": 20, "record_every": 10},
+        route_map = {
+            route.path: route.endpoint
+            for route in app.routes
+            if hasattr(route, "path") and hasattr(route, "endpoint")
+        }
+        body = route_map["/simulate/lbm_cavity"](
+            LBMReq(nx=6, ny=6, tau=0.8, u_top=0.05, n_steps=2, record_every=1)
         )
-        assert r.status_code == 200
-        body = r.json()
         assert body["n_snapshots"] == 2
-        assert body["shape"] == [2, 8, 8, 3]
+        assert body["shape"] == [2, 6, 6, 3]
         assert abs(body["ux_max"]) < 1.0

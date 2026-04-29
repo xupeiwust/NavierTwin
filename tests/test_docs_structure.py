@@ -40,6 +40,7 @@ class TestDocsStructure:
             "active_learning",
             "operator_learning",
             "gui",
+            "api",
             "post_process_facade",
         ]:
             assert (api / f"{pkg}.rst").exists()
@@ -80,6 +81,18 @@ class TestDocsStructure:
             "naviertwin.gui",
             "naviertwin.gui.panels",
             "naviertwin.gui.widgets",
+        ]:
+            assert f".. automodule:: {automodule}" in page
+
+    def test_rest_api_docs_are_discoverable(self) -> None:
+        """REST API docs should expose the shipped FastAPI entrypoints."""
+        index = (DOCS / "source" / "index.rst").read_text(encoding="utf-8")
+        page = (DOCS / "source" / "api" / "api.rst").read_text(encoding="utf-8")
+
+        assert "api/api" in index
+        for automodule in [
+            "naviertwin.api",
+            "naviertwin.api.server",
         ]:
             assert f".. automodule:: {automodule}" in page
 
@@ -184,6 +197,15 @@ class TestDocsStructure:
     def test_public_api_package_initializers_are_not_placeholders(self) -> None:
         """Customer-visible API packages should export real implemented symbols."""
         expected = {
+            "naviertwin.api": [
+                "create_app",
+                "app",
+                "CouetteReq",
+                "PoiseuilleReq",
+                "PODReq",
+                "BayesianOptReq",
+                "LBMReq",
+            ],
             "naviertwin.gui": ["MainWindow"],
             "naviertwin.gui.panels": [
                 "ImportPanel",

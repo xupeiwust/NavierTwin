@@ -38,6 +38,7 @@ GUI 툴입니다.
    api/explainability
    api/digital_twin
    api/post_process_facade
+   api/api
    api/validation
    api/export
    api/report

@@ -1,5 +1,28 @@
-"""NavierTwin REST API (FastAPI 기반, optional).
+"""NavierTwin REST API public API (FastAPI 기반, optional).
 
 사용:
-    uvicorn naviertwin.api.server:app --reload
+    >>> from naviertwin.api import create_app
+    >>> app = create_app()
+    >>> app.title
+    'NavierTwin API'
 """
+
+from naviertwin.api.server import (
+    BayesianOptReq,
+    CouetteReq,
+    LBMReq,
+    PODReq,
+    PoiseuilleReq,
+    app,
+    create_app,
+)
+
+__all__ = [
+    "BayesianOptReq",
+    "CouetteReq",
+    "LBMReq",
+    "PODReq",
+    "PoiseuilleReq",
+    "app",
+    "create_app",
+]

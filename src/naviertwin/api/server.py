@@ -181,3 +181,14 @@ try:
     app: Optional[Any] = create_app() if _HAS_FASTAPI else None
 except RuntimeError:
     app = None
+
+
+__all__ = [
+    "BayesianOptReq",
+    "CouetteReq",
+    "LBMReq",
+    "PODReq",
+    "PoiseuilleReq",
+    "app",
+    "create_app",
+]

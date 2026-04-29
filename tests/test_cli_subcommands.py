@@ -31,6 +31,19 @@ class TestCLISubcommands:
         for command in EXPECTED_SUBCOMMANDS:
             assert command in result.stdout
 
+    def test_server_subcommand_help_is_copy_pasteable(self) -> None:
+        env = {**os.environ, "PYTHONPATH": "src"}
+        result = subprocess.run(
+            [sys.executable, "-m", "naviertwin.main", "server", "--help"],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "usage: naviertwin server" in result.stdout
+        assert "--host" in result.stdout
+        assert "--port" in result.stdout
+
     def test_pipeline_subcommand_runs(self) -> None:
         env = {**os.environ, "PYTHONPATH": "src"}
         result = subprocess.run(
