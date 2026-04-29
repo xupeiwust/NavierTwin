@@ -48,9 +48,15 @@ class TestTucker:
 
 
 class TestKANO:
+    def test_kano_package_root_export(self) -> None:
+        from naviertwin.core.operator_learning.kan import KANO1D
+        from naviertwin.core.operator_learning.kan.kano import KANO1D as KANO1DSource
+
+        assert KANO1D is KANO1DSource
+
     def test_kano_fit_predict(self) -> None:
         pytest.importorskip("torch")
-        from naviertwin.core.operator_learning.kan.kano import KANO1D
+        from naviertwin.core.operator_learning.kan import KANO1D
 
         rng = np.random.default_rng(0)
         X = rng.standard_normal((10, 32, 1)).astype(np.float32)

@@ -6,7 +6,7 @@ FNO 블록의 pointwise 변환부에 삽입해 해석성을 보강한다.
 
 Examples:
     >>> import numpy as np
-    >>> from naviertwin.core.operator_learning.kan.kano import KANO1D
+    >>> from naviertwin.core.operator_learning.kan import KANO1D
     >>> rng = np.random.default_rng(0)
     >>> X = rng.standard_normal((20, 32, 1)).astype(np.float32)
     >>> Y = np.sin(X).astype(np.float32)

@@ -1,5 +1,9 @@
-"""KAN (Kolmogorov-Arnold Network) 기반 연산자 서브모듈.
+"""KAN (Kolmogorov-Arnold Network) operator-learning public API.
 
-구현 예정:
-    - KANO (KAN Neural Operator)
+Examples:
+    >>> from naviertwin.core.operator_learning.kan import KANO1D
 """
+
+from naviertwin.core.operator_learning.kan.kano import KANO1D
+
+__all__ = ["KANO1D"]

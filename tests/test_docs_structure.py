@@ -43,6 +43,18 @@ class TestDocsStructure:
         ]:
             assert (api / f"{pkg}.rst").exists()
 
+    def test_operator_learning_api_docs_include_implemented_subpackages(self) -> None:
+        """Operator-learning docs should expose shipped customer-facing operators."""
+        page = (DOCS / "source" / "api" / "operator_learning.rst").read_text(
+            encoding="utf-8"
+        )
+
+        for automodule in [
+            "naviertwin.core.operator_learning",
+            "naviertwin.core.operator_learning.kan",
+        ]:
+            assert f".. automodule:: {automodule}" in page
+
     def test_makefile(self) -> None:
         mf = DOCS / "Makefile"
         assert mf.exists()
@@ -159,6 +171,7 @@ class TestDocsStructure:
             ],
             "naviertwin.core.operator_learning.unet": ["UNet2D", "UNet3D"],
             "naviertwin.core.operator_learning.koopman": ["KNO", "FlowDMD"],
+            "naviertwin.core.operator_learning.kan": ["KANO1D"],
             "naviertwin.core.operator_learning.latent_operator": [
                 "LDeepONet",
                 "PILatentNO",
