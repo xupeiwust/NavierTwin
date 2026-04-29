@@ -38,6 +38,10 @@ def test_twin_panel_optimization_controls_render(qtbot) -> None:
     assert panel._objective_combo.findText("min field mean") >= 0
     assert panel._objective_combo.findText("match target scalar") >= 0
     assert panel._optimize_btn.text() == "최적화 실행"
+    assert panel._assim_method_combo.findText("4D-Var") >= 0
+    assert panel._assim_method_combo.findText("Particle Filter") >= 0
+    assert panel._assim_method_combo.findText("UKF") >= 0
+    assert panel._assim_btn.text() == "동화 quick-check"
 
 
 def test_twin_panel_runs_surrogate_optimizer(
@@ -96,3 +100,27 @@ def test_twin_panel_optimization_requires_engine(qtbot) -> None:
     panel._run_optimize()
 
     assert "TwinEngine이 없습니다" in panel._result_text.toPlainText()
+
+
+@pytest.mark.parametrize("method", ["4D-Var", "Particle Filter", "UKF"])
+def test_twin_panel_runs_assimilation_quick_check(qtbot, method: str) -> None:
+    from naviertwin.gui.panels.twin_panel import TwinPanel
+
+    panel = TwinPanel()
+    qtbot.addWidget(panel)
+    emitted: list[dict[str, object]] = []
+    panel.assimilation_done.connect(emitted.append)
+    panel._assim_method_combo.setCurrentText(method)
+    panel._assim_state_dim_spin.setValue(2)
+    panel._assim_steps_spin.setValue(3)
+    panel._assim_particles_spin.setValue(80)
+    panel._assim_noise_spin.setValue(0.02)
+
+    panel._run_assimilation()
+
+    assert emitted and emitted[0]["method"] == method
+    assert emitted[0]["n_state"] == 2
+    assert emitted[0]["n_steps"] == 3
+    assert float(emitted[0]["error"]) < 1.0
+    assert "동화 quick-check 완료" in panel._result_text.toPlainText()
+    assert panel._status_label.text() == f"{method} 동화 완료."

@@ -99,6 +99,8 @@ class TestDocsStructure:
             "Attention viz",
             "Active Learning",
             "Online Update",
+            "4D-Var",
+            "UKF",
             "SINDy",
             "ONNX",
             "TorchScript",

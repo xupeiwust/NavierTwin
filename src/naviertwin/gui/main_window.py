@@ -408,6 +408,12 @@ class MainWindow(QMainWindow):
                 f"최적화 완료: f_best={float(result.get('f_best', 0.0)):.4g}"
             )
         )
+        self._twin_panel.assimilation_done.connect(
+            lambda result: self._set_status(
+                f"{result.get('method', 'Assimilation')} 완료: "
+                f"error={float(result.get('error', 0.0)):.4g}"
+            )
+        )
         if self._explain_panel is not None:
             self._explain_panel.explanation_done.connect(
                 lambda result: self._set_status(

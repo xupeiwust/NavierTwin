@@ -93,3 +93,14 @@ def test_online_learning_signal_updates_status(qtbot) -> None:
     win._model_panel.online_learning_done.emit({"buffer_size": 7})
 
     assert "Online Update 완료: buffer=7" in win._status_label.text()
+
+
+def test_assimilation_signal_updates_status(qtbot) -> None:
+    from naviertwin.gui.main_window import MainWindow
+
+    win = MainWindow(confirm_on_close=False)
+    qtbot.addWidget(win)
+
+    win._twin_panel.assimilation_done.emit({"method": "UKF", "error": 0.0123})
+
+    assert "UKF 완료: error=0.0123" in win._status_label.text()

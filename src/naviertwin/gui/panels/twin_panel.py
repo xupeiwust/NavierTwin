@@ -3,6 +3,7 @@
 Signals:
     prediction_done(object): 예측 완료 시 복원된 필드 배열 발생.
     optimization_done(object): 최적화 완료 시 최적 파라미터/목적값 dict 발생.
+    assimilation_done(object): 데이터 동화 quick-check 완료 시 결과 dict 발생.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ class TwinPanel(QWidget):
 
     prediction_done = Signal(object)
     optimization_done = Signal(object)
+    assimilation_done = Signal(object)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -183,6 +185,40 @@ class TwinPanel(QWidget):
         opt_form.addRow(self._optimize_btn)
 
         left_layout.addWidget(opt_group)
+
+        assim_group = QGroupBox("Assimilation Quick Check")
+        assim_form = QFormLayout(assim_group)
+
+        self._assim_method_combo = QComboBox()
+        self._assim_method_combo.addItems(["4D-Var", "Particle Filter", "UKF"])
+        assim_form.addRow("Method:", self._assim_method_combo)
+
+        self._assim_state_dim_spin = QSpinBox()
+        self._assim_state_dim_spin.setRange(1, 10)
+        self._assim_state_dim_spin.setValue(2)
+        assim_form.addRow("State dim:", self._assim_state_dim_spin)
+
+        self._assim_steps_spin = QSpinBox()
+        self._assim_steps_spin.setRange(1, 50)
+        self._assim_steps_spin.setValue(5)
+        assim_form.addRow("Steps:", self._assim_steps_spin)
+
+        self._assim_particles_spin = QSpinBox()
+        self._assim_particles_spin.setRange(20, 2000)
+        self._assim_particles_spin.setValue(200)
+        assim_form.addRow("Particles:", self._assim_particles_spin)
+
+        self._assim_noise_spin = QDoubleSpinBox()
+        self._assim_noise_spin.setRange(1e-6, 10.0)
+        self._assim_noise_spin.setDecimals(6)
+        self._assim_noise_spin.setValue(0.05)
+        assim_form.addRow("Obs noise:", self._assim_noise_spin)
+
+        self._assim_btn = QPushButton("동화 quick-check")
+        self._assim_btn.clicked.connect(self._run_assimilation)
+        assim_form.addRow(self._assim_btn)
+
+        left_layout.addWidget(assim_group)
 
         # 데모 학습 버튼
         self._demo_btn = QPushButton("데모 학습 & 예측")
@@ -340,6 +376,122 @@ class TwinPanel(QWidget):
             self.optimization_done.emit(result)
         except Exception as exc:
             self._log(f"[ERROR] 최적화 실패: {exc}")
+
+    def _run_assimilation(self) -> None:
+        method = self._assim_method_combo.currentText()
+        n_state = int(self._assim_state_dim_spin.value())
+        n_steps = int(self._assim_steps_spin.value())
+        obs_noise = float(self._assim_noise_spin.value())
+
+        try:
+            if method == "4D-Var":
+                result = self._run_four_dvar_demo(n_state, n_steps, obs_noise)
+            elif method == "Particle Filter":
+                result = self._run_particle_filter_demo(n_state, n_steps, obs_noise)
+            else:
+                result = self._run_ukf_demo(n_state, n_steps, obs_noise)
+
+            estimate = np.asarray(result["estimate"], dtype=float)
+            self._log(
+                "동화 quick-check 완료: "
+                f"method={method}, error={float(result['error']):.6g}, "
+                f"estimate={np.array2string(estimate, precision=4)}"
+            )
+            self._status_label.setText(f"{method} 동화 완료.")
+            self.assimilation_done.emit(result)
+        except Exception as exc:
+            self._log(f"[ERROR] 동화 실패: {exc}")
+
+    def _run_four_dvar_demo(
+        self, n_state: int, n_steps: int, obs_noise: float
+    ) -> dict[str, object]:
+        from naviertwin.core.data_assimilation.four_dvar import four_dvar_linear
+
+        x_true, M, H, Y = self._assimilation_scenario(n_state, n_steps, obs_noise)
+        x_b = np.zeros(n_state, dtype=float)
+        B = np.eye(n_state, dtype=float)
+        R = (obs_noise**2 + 1e-9) * np.eye(n_state, dtype=float)
+        estimate = four_dvar_linear(x_b, B, Y, H, R, M)
+        return self._assimilation_result("4D-Var", estimate, x_true, n_steps)
+
+    def _run_particle_filter_demo(
+        self, n_state: int, n_steps: int, obs_noise: float
+    ) -> dict[str, object]:
+        from naviertwin.core.data_assimilation.particle_filter import ParticleFilter
+
+        x_true, M, H, Y = self._assimilation_scenario(n_state, n_steps, obs_noise)
+        n_particles = int(self._assim_particles_spin.value())
+        rng = np.random.default_rng(0)
+        pf = ParticleFilter(n_particles=n_particles, state_dim=n_state)
+        particles = rng.normal(loc=x_true, scale=0.25, size=(n_particles, n_state))
+        pf.initialize(particles)
+        Q = (obs_noise**2 + 1e-9) * np.eye(n_state, dtype=float)
+        R = (obs_noise**2 + 1e-9) * np.eye(n_state, dtype=float)
+        for obs in Y:
+            pf.predict(lambda x: M @ x, process_cov=Q, rng=rng)
+            pf.update(obs, H, R)
+        estimate = pf.estimate()
+        truth = np.linalg.matrix_power(M, n_steps) @ x_true
+        result = self._assimilation_result("Particle Filter", estimate, truth, n_steps)
+        result["n_particles"] = n_particles
+        return result
+
+    def _run_ukf_demo(
+        self, n_state: int, n_steps: int, obs_noise: float
+    ) -> dict[str, object]:
+        from naviertwin.core.data_assimilation.ukf import ukf_step
+
+        x_true, M, H, Y = self._assimilation_scenario(n_state, n_steps, obs_noise)
+        x = np.zeros(n_state, dtype=float)
+        P = np.eye(n_state, dtype=float)
+        Q = (obs_noise**2 + 1e-9) * np.eye(n_state, dtype=float)
+        R = (obs_noise**2 + 1e-9) * np.eye(n_state, dtype=float)
+        for obs in Y:
+            x, P = ukf_step(
+                x,
+                P,
+                lambda state: M @ state,
+                lambda state: H @ state,
+                z=obs,
+                Q=Q,
+                R=R,
+            )
+        truth = np.linalg.matrix_power(M, n_steps) @ x_true
+        result = self._assimilation_result("UKF", x, truth, n_steps)
+        result["cov_trace"] = float(np.trace(P))
+        return result
+
+    @staticmethod
+    def _assimilation_scenario(
+        n_state: int, n_steps: int, obs_noise: float
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        x_true = np.linspace(1.0, 0.4, n_state, dtype=float)
+        M = 0.92 * np.eye(n_state, dtype=float)
+        if n_state > 1:
+            M += 0.03 * np.diag(np.ones(n_state - 1), k=1)
+        H = np.eye(n_state, dtype=float)
+        x = x_true.copy()
+        observations: list[np.ndarray] = []
+        deterministic_noise = obs_noise * np.linspace(-0.5, 0.5, n_state)
+        for _ in range(n_steps):
+            x = M @ x
+            observations.append(H @ x + deterministic_noise)
+        return x_true, M, H, np.vstack(observations)
+
+    @staticmethod
+    def _assimilation_result(
+        method: str, estimate: np.ndarray, truth: np.ndarray, n_steps: int
+    ) -> dict[str, object]:
+        estimate = np.asarray(estimate, dtype=float).reshape(-1)
+        truth = np.asarray(truth, dtype=float).reshape(-1)
+        return {
+            "method": method,
+            "estimate": estimate,
+            "truth": truth,
+            "error": float(np.linalg.norm(estimate - truth)),
+            "n_state": int(truth.size),
+            "n_steps": int(n_steps),
+        }
 
     def _build_optimizer(self, bounds: np.ndarray) -> object:
         optimizer_name = self._optimizer_combo.currentText()
