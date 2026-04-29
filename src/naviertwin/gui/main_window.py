@@ -274,6 +274,10 @@ class MainWindow(QMainWindow):
 
         # 도구 메뉴
         self._tools_menu = mb.addMenu("도구(&T)")
+        benchmark_action = QAction("벤치마크 실행(&B)", self)
+        benchmark_action.triggered.connect(self._run_benchmark)
+        self._tools_menu.addAction(benchmark_action)
+
         pipeline_demo_action = QAction("파이프라인 데모 실행(&P)", self)
         pipeline_demo_action.triggered.connect(self._run_pipeline_demo)
         self._tools_menu.addAction(pipeline_demo_action)
@@ -568,6 +572,35 @@ class MainWindow(QMainWindow):
             self.set_language(lang)
             self._save_gui_config()
             self._set_status(f"언어 변경: {lang}")
+
+    def _run_benchmark(self) -> None:
+        """고객 smoke benchmark를 GUI에서 실행한다."""
+        try:
+            code = self._run_benchmark_cli("burgers")
+        except Exception as exc:  # noqa: BLE001
+            self._set_status("벤치마크 실패")
+            QMessageBox.warning(self, "벤치마크 실패", str(exc))
+            return
+        if code != 0:
+            self._set_status("벤치마크 실패")
+            QMessageBox.warning(
+                self,
+                "벤치마크 실패",
+                f"benchmark 종료 코드: {code}",
+            )
+            return
+        self._set_status("벤치마크 완료: burgers")
+        QMessageBox.information(
+            self,
+            "벤치마크 완료",
+            "Burgers benchmark가 정상 완료되었습니다.",
+        )
+
+    def _run_benchmark_cli(self, kind: str) -> int:
+        """테스트에서 대체 가능한 benchmark 실행 래퍼."""
+        from naviertwin.main import _run_benchmark
+
+        return _run_benchmark(kind)
 
     def _run_pipeline_demo(self) -> None:
         outdir = QFileDialog.getExistingDirectory(
