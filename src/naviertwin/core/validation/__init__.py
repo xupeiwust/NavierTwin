@@ -25,6 +25,29 @@ _EXPORT_MODULES = {
     "poiseuille_pipe": "naviertwin.core.validation.analytic_solutions",
     "spectral_poiseuille": "naviertwin.core.validation.analytic_solutions",
     "compare_against_analytic": "naviertwin.core.validation.analytic_solutions",
+    "kfold_scores": "naviertwin.core.validation.cross_val",
+    "grid_search": "naviertwin.core.validation.cross_val",
+    "wasserstein_1d": "naviertwin.core.validation.distances",
+    "mmd_gaussian": "naviertwin.core.validation.distances",
+    "kl_divergence_gaussian": "naviertwin.core.validation.distances",
+    "field_diff_stats": "naviertwin.core.validation.field_diff",
+    "hotspot_indices": "naviertwin.core.validation.field_diff",
+    "band_mask": "naviertwin.core.validation.field_diff",
+    "field_sanity_check": "naviertwin.core.validation.field_sanity",
+    "detect_outliers_iqr": "naviertwin.core.validation.field_sanity",
+    "detect_outliers_zscore": "naviertwin.core.validation.field_sanity",
+    "psnr": "naviertwin.core.validation.image_metrics",
+    "nrmse": "naviertwin.core.validation.image_metrics",
+    "ssim": "naviertwin.core.validation.image_metrics",
+    "channel_rmse": "naviertwin.core.validation.multi_output_metrics",
+    "channel_relative_error": "naviertwin.core.validation.multi_output_metrics",
+    "aggregated_rmse": "naviertwin.core.validation.multi_output_metrics",
+    "multi_output_r2": "naviertwin.core.validation.multi_output_metrics",
+    "cross_channel_correlation": "naviertwin.core.validation.multi_output_metrics",
+    "top_k_worst_channels": "naviertwin.core.validation.multi_output_metrics",
+    "per_sample_error_norm": "naviertwin.core.validation.multi_output_metrics",
+    "taylor_green_2d": "naviertwin.core.validation.taylor_green",
+    "kinetic_energy_decay": "naviertwin.core.validation.taylor_green",
 }
 
 
@@ -37,16 +60,10 @@ def __getattr__(name: str) -> Any:
     globals()[name] = value
     return value
 
-__all__ = [
-    "rmse",
-    "r2_score",
-    "relative_l2_error",
-    "max_error",
-    "compute_all_metrics",
-    "AnalyticSolution",
-    "couette_flow",
-    "poiseuille_flow_2d",
-    "poiseuille_pipe",
-    "spectral_poiseuille",
-    "compare_against_analytic",
-]
+
+def __dir__() -> list[str]:
+    """Return stable public members for autocomplete and Sphinx."""
+    return sorted([*globals(), *__all__])
+
+
+__all__ = list(_EXPORT_MODULES)
