@@ -173,7 +173,7 @@ def _run_gui(config_path: str | None) -> int:
 
     from naviertwin.gui.main_window import MainWindow  # noqa: PLC0415
 
-    window = MainWindow()
+    window = MainWindow(config_path=config_path)
     window.show()
 
     return app.exec()

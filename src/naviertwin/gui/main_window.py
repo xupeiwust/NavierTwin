@@ -45,6 +45,7 @@ from naviertwin.gui.panels.import_panel import ImportPanel
 from naviertwin.gui.panels.model_panel import ModelPanel
 from naviertwin.gui.panels.reduce_panel import ReducePanel
 from naviertwin.gui.panels.twin_panel import TwinPanel
+from naviertwin.utils.config import NavierTwinConfig, load_config, save_config
 from naviertwin.utils.updater import UpdateCheckResult
 
 
@@ -84,6 +85,11 @@ def format_update_check_message(result: UpdateCheckResult) -> tuple[str, str]:
     )
 
 
+def default_config_path() -> Path:
+    """기본 GUI 설정 파일 경로를 반환한다."""
+    return Path.home() / ".naviertwin" / "config.json"
+
+
 def _load_stylesheet() -> str:
     """다크 테마 QSS를 로드한다."""
     qss_path = Path(__file__).parent / "styles" / "dark_theme.qss"
@@ -105,9 +111,12 @@ class MainWindow(QMainWindow):
         parent: Optional[QWidget] = None,
         *,
         confirm_on_close: bool = True,
+        config_path: str | Path | None = None,
     ) -> None:
         super().__init__(parent)
         self._confirm_on_close = confirm_on_close
+        self._config_path = Path(config_path).expanduser() if config_path else default_config_path()
+        self._config = self._load_gui_config()
         self.setWindowTitle("NavierTwin — CFD Digital Twin")
         self.setMinimumSize(1280, 800)
         self.resize(1440, 900)
@@ -230,6 +239,9 @@ class MainWindow(QMainWindow):
         open_action.triggered.connect(self._open_file)
         file_menu.addAction(open_action)
 
+        self._recent_projects_menu = file_menu.addMenu("최근 프로젝트(&R)")
+        self._refresh_recent_projects_menu()
+
         save_project_action = QAction("프로젝트 저장(&S)", self)
         save_project_action.setShortcut("Ctrl+S")
         save_project_action.triggered.connect(self._save_project)
@@ -307,9 +319,7 @@ class MainWindow(QMainWindow):
         )
 
         # Export 완료 상태 업데이트
-        self._export_panel.export_done.connect(
-            lambda p: self._set_status(f"내보내기 완료: {p}")
-        )
+        self._export_panel.export_done.connect(self._on_export_done)
         self._export_panel.project_loaded.connect(self._on_project_loaded)
 
         # Twin 예측 완료
@@ -409,6 +419,16 @@ class MainWindow(QMainWindow):
             self._set_status("프로젝트 로드 완료 (dataset)")
         loaded_meta = self._extract_project_metadata(dataset, engine)
         self._model_panel.set_loaded_metadata(loaded_meta)
+        project_path = self._current_project_path()
+        if project_path is not None:
+            self._remember_recent_project(project_path)
+
+    def _on_export_done(self, path: str) -> None:
+        """내보내기 완료 상태를 표시하고 .ntwin 프로젝트를 MRU에 반영한다."""
+        self._set_status(f"내보내기 완료: {path}")
+        out = Path(path)
+        if out.suffix.lower() == ".ntwin":
+            self._remember_recent_project(out)
 
     def _build_engine(self, reducer: object, surrogate: object) -> object:
         """학습된 reducer/surrogate로 TwinEngine을 구성한다."""
@@ -460,6 +480,22 @@ class MainWindow(QMainWindow):
             "<p>Python 3.10+ | PySide6 | PyVista | PyTorch</p>",
         )
 
+    def _open_recent_project(self) -> None:
+        action: QAction = self.sender()  # type: ignore[assignment]
+        path_text = action.data()
+        if not isinstance(path_text, str):
+            return
+        path = Path(path_text)
+        if not path.exists():
+            self._remove_recent_project(path)
+            QMessageBox.warning(
+                self,
+                "최근 프로젝트 열기 실패",
+                f"파일을 찾을 수 없습니다:\n{path}",
+            )
+            return
+        self._open_selected_path(path)
+
     def _check_for_updates(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -491,6 +527,71 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, msg: str) -> None:
         self._status_label.setText(msg)
+
+    def _load_gui_config(self) -> NavierTwinConfig:
+        """GUI 설정을 로드하되 손상된 설정은 기본값으로 폴백한다."""
+        try:
+            return load_config(self._config_path)
+        except Exception:  # noqa: BLE001
+            return NavierTwinConfig()
+
+    def _save_gui_config(self) -> None:
+        """현재 GUI 설정을 저장한다."""
+        try:
+            save_config(self._config, self._config_path)
+        except OSError:
+            # 설정 저장 실패가 프로젝트 로드/저장 상태 메시지를 덮지 않게 한다.
+            return
+
+    def _remember_recent_project(self, path: Path) -> None:
+        """최근 프로젝트 목록에 path를 최신 항목으로 저장한다."""
+        path_text = str(path.expanduser().resolve())
+        existing = [
+            item for item in self._config.recent_projects
+            if str(Path(item).expanduser().resolve()) != path_text
+        ]
+        self._config.recent_projects = [path_text, *existing][:10]
+        self._save_gui_config()
+        self._refresh_recent_projects_menu()
+
+    def _remove_recent_project(self, path: Path) -> None:
+        """존재하지 않는 최근 프로젝트를 목록에서 제거한다."""
+        path_text = str(path.expanduser().resolve())
+        self._config.recent_projects = [
+            item for item in self._config.recent_projects
+            if str(Path(item).expanduser().resolve()) != path_text
+        ]
+        self._save_gui_config()
+        self._refresh_recent_projects_menu()
+
+    def _refresh_recent_projects_menu(self) -> None:
+        """File 메뉴의 최근 프로젝트 목록을 설정과 동기화한다."""
+        menu = getattr(self, "_recent_projects_menu", None)
+        if menu is None:
+            return
+
+        menu.clear()
+        if not self._config.recent_projects:
+            empty = QAction("최근 프로젝트 없음", self)
+            empty.setEnabled(False)
+            menu.addAction(empty)
+            return
+
+        for path_text in self._config.recent_projects:
+            path = Path(path_text)
+            action = QAction(path.name or path_text, self)
+            action.setToolTip(path_text)
+            action.setData(path_text)
+            action.triggered.connect(self._open_recent_project)
+            menu.addAction(action)
+
+    def _current_project_path(self) -> Path | None:
+        """ExportPanel 경로 입력에서 현재 .ntwin 프로젝트 경로를 추출한다."""
+        path_text = self._export_panel._path_edit.text().strip()
+        if not path_text:
+            return None
+        path = Path(path_text)
+        return path if path.suffix.lower() == ".ntwin" else None
 
     def _extract_project_metadata(
         self, dataset: object, engine: object | None
