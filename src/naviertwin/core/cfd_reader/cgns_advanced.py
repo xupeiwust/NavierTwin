@@ -3,7 +3,7 @@
 CGNS 는 HDF5 위에 spec 으로 zone/family/family_BC 구조를 가진다.
 
 Examples:
-    >>> from naviertwin.core.cfd_reader.cgns_advanced import has_h5py
+    >>> from naviertwin.core.cfd_reader import has_h5py
     >>> isinstance(has_h5py(), bool)
     True
 """

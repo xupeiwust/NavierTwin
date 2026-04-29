@@ -55,6 +55,20 @@ class TestDocsStructure:
         ]:
             assert f".. automodule:: {automodule}" in page
 
+    def test_cfd_reader_api_docs_include_advanced_helpers(self) -> None:
+        """CFD reader docs should expose shipped format-specific helper APIs."""
+        page = (DOCS / "source" / "api" / "cfd_reader.rst").read_text(
+            encoding="utf-8"
+        )
+
+        for automodule in [
+            "naviertwin.core.cfd_reader",
+            "naviertwin.core.cfd_reader.foamlib_case",
+            "naviertwin.core.cfd_reader.cgns_advanced",
+            "naviertwin.core.cfd_reader.fluent_cas_ext",
+        ]:
+            assert f".. automodule:: {automodule}" in page
+
     def test_makefile(self) -> None:
         mf = DOCS / "Makefile"
         assert mf.exists()
@@ -156,6 +170,25 @@ class TestDocsStructure:
     def test_public_api_package_initializers_are_not_placeholders(self) -> None:
         """Customer-visible API packages should export real implemented symbols."""
         expected = {
+            "naviertwin.core.cfd_reader": [
+                "BaseReader",
+                "CFDDataset",
+                "ReaderFactory",
+                "OpenFOAMReader",
+                "VTKReader",
+                "FluentReader",
+                "CGNSReader",
+                "GmshReader",
+                "SU2Reader",
+                "read_foam_dict",
+                "modify_transport_properties",
+                "parameter_sweep",
+                "sample_field_at_points",
+                "iter_zones",
+                "list_zones",
+                "parse_section_ids",
+                "list_zone_names",
+            ],
             "naviertwin.core.report": ["ReportGenerator", "HTMLReport", "MarkdownReport"],
             "naviertwin.core.multi_fidelity": ["AdditiveCoKriging", "freeze_layers"],
             "naviertwin.core.sensitivity": ["saltelli_sample", "sobol_indices"],

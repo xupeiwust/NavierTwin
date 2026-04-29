@@ -32,7 +32,7 @@ nu              [0 2 -1 0 0 0 0] 1e-05;
 
 class TestFoamlibOps:
     def test_read_foam_dict(self, tmp_path: Path) -> None:
-        from naviertwin.core.cfd_reader.foamlib_case import read_foam_dict
+        from naviertwin.core.cfd_reader import read_foam_dict
 
         case = tmp_path / "case1"
         _write_transport_properties(case)
@@ -44,7 +44,7 @@ class TestFoamlibOps:
             pytest.skip(f"foamlib 파서가 이 파일을 처리 못함: {e}")
 
     def test_modify_transport_properties(self, tmp_path: Path) -> None:
-        from naviertwin.core.cfd_reader.foamlib_case import modify_transport_properties
+        from naviertwin.core.cfd_reader import modify_transport_properties
 
         case = tmp_path / "case1"
         _write_transport_properties(case)
@@ -56,7 +56,7 @@ class TestFoamlibOps:
             pytest.skip(f"foamlib 수정 실패 (버전 API 차이): {e}")
 
     def test_parameter_sweep(self, tmp_path: Path) -> None:
-        from naviertwin.core.cfd_reader.foamlib_case import parameter_sweep
+        from naviertwin.core.cfd_reader import parameter_sweep
 
         template = tmp_path / "template"
         _write_transport_properties(template)

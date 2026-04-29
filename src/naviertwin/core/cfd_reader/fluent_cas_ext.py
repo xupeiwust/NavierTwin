@@ -3,7 +3,7 @@
 기존 fluent_reader 보완: ASCII .cas 의 section header (id) 를 빠르게 enumerate.
 
 Examples:
-    >>> from naviertwin.core.cfd_reader.fluent_cas_ext import parse_section_ids
+    >>> from naviertwin.core.cfd_reader import parse_section_ids
     >>> txt = '(0 "header") (10 (0 1 2 0 0))'
     >>> ids = parse_section_ids(txt)
     >>> 0 in ids and 10 in ids

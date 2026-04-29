@@ -3,7 +3,7 @@
 OpenFOAM 설치 환경에서 동작. 설치 없으면 read-only 조작만 가능.
 
 Usage:
-    >>> from naviertwin.core.cfd_reader.foamlib_case import (
+    >>> from naviertwin.core.cfd_reader import (
     ...     read_foam_dict, modify_transport_properties,
     ... )
     >>> # d = read_foam_dict("/case/constant/transportProperties")

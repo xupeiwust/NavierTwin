@@ -5,7 +5,7 @@ from __future__ import annotations
 
 class TestFluentCasExt:
     def test_section_ids(self) -> None:
-        from naviertwin.core.cfd_reader.fluent_cas_ext import parse_section_ids
+        from naviertwin.core.cfd_reader import parse_section_ids
 
         txt = '(0 "comment") (10 (0 1 2 0 0)) (12 (1 2 3 0 0))'
         ids = parse_section_ids(txt)
@@ -14,7 +14,7 @@ class TestFluentCasExt:
         assert 12 in ids
 
     def test_zone_names(self, tmp_path) -> None:
-        from naviertwin.core.cfd_reader.fluent_cas_ext import list_zone_names
+        from naviertwin.core.cfd_reader import list_zone_names
 
         # synthetic content with two zones
         text = """

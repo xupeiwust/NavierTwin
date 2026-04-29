@@ -10,11 +10,25 @@
     - :class:`CGNSReader`: CGNS .cgns 리더
     - :class:`GmshReader`: Gmsh .msh 리더
     - :class:`SU2Reader`: SU2 .su2 리더
+    - OpenFOAM/CGNS/Fluent 고급 helper 함수
 """
 
 from naviertwin.core.cfd_reader.base import BaseReader, CFDDataset
+from naviertwin.core.cfd_reader.cgns_advanced import has_h5py, iter_zones, list_zones
 from naviertwin.core.cfd_reader.cgns_reader import CGNSReader  # noqa: F401 — auto-register
+from naviertwin.core.cfd_reader.fluent_cas_ext import (
+    list_zone_names,
+    parse_section_ids,
+    section_count,
+)
 from naviertwin.core.cfd_reader.fluent_reader import FluentReader  # noqa: F401 — auto-register
+from naviertwin.core.cfd_reader.foamlib_case import (
+    modify_transport_properties,
+    parameter_sweep,
+    read_foam_dict,
+    sample_field_at_points,
+    set_foam_value,
+)
 from naviertwin.core.cfd_reader.gmsh_reader import GmshReader  # noqa: F401 — auto-register
 from naviertwin.core.cfd_reader.openfoam_reader import OpenFOAMReader
 from naviertwin.core.cfd_reader.reader_factory import ReaderFactory
@@ -36,4 +50,15 @@ __all__ = [
     "CGNSReader",
     "GmshReader",
     "SU2Reader",
+    "has_h5py",
+    "iter_zones",
+    "list_zones",
+    "list_zone_names",
+    "parse_section_ids",
+    "section_count",
+    "modify_transport_properties",
+    "parameter_sweep",
+    "read_foam_dict",
+    "sample_field_at_points",
+    "set_foam_value",
 ]

@@ -9,7 +9,7 @@ class TestCGNSAdvanced:
     def test_iter_synthetic_zones(self, tmp_path) -> None:
         h5py = pytest.importorskip("h5py")
 
-        from naviertwin.core.cfd_reader.cgns_advanced import list_zones
+        from naviertwin.core.cfd_reader import list_zones
 
         path = tmp_path / "test.cgns"
         with h5py.File(path, "w") as f:
