@@ -244,6 +244,19 @@ class TestDocsStructure:
             "naviertwin.core.generative.conditional_gen": ["ConditionalVAE"],
             "naviertwin.core.generative.diffusion_pde": ["DiffusionPDE"],
             "naviertwin.core.generative.wavelet_diffusion": ["WaveletDiffusionNO"],
+            "naviertwin.core.equivariant": [
+                "BaseEquivariant",
+                "C4EquivariantFNO2D",
+                "SO2Canonicalizer",
+                "SO2EquivariantOperator",
+                "EGNN",
+            ],
+            "naviertwin.core.equivariant.group_equiv_fno": ["C4EquivariantFNO2D"],
+            "naviertwin.core.equivariant.physics_embedded": [
+                "SO2Canonicalizer",
+                "SO2EquivariantOperator",
+                "EGNN",
+            ],
             "naviertwin.core.flow_analysis.statistics": [
                 "compute_fft",
                 "two_point_correlation",
