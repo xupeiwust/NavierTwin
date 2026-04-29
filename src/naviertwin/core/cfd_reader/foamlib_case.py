@@ -13,10 +13,11 @@ Usage:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
-from numpy.typing import NDArray
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
 
 from naviertwin.utils.logger import get_logger
 
@@ -89,6 +90,7 @@ def parameter_sweep(
     _require_foamlib()
     import shutil
 
+    import numpy as np
     from foamlib import FoamCase
 
     template = Path(template_case)
@@ -128,6 +130,7 @@ def sample_field_at_points(
     OpenFOAM 설치 환경이 없으면 None 반환.
     """
     try:
+        import numpy as np
         from foamlib import FoamCase
 
         case = FoamCase(str(case_path))

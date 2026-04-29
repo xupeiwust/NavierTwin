@@ -221,8 +221,13 @@ def test_installed_artifact_smokes_enforce_repo_isolation() -> None:
         assert "runtime-cwd" in script_text
         assert 'os.environ.pop("PYTHONPATH", None)' in script_text
         assert 'os.environ["PYTHONNOUSERSITE"] = "1"' in script_text
-        assert "naviertwin.__file__" in script_text
-        assert "installed import resolved to repo checkout" in script_text
+        assert "--force-reinstall" in script_text
+        assert 'install_env.pop("PYTHONPATH", None)' in script_text
+        assert "allowed_statuses={\"ok\", \"warn\", \"error\"}" in script_text
+        assert "importlib.import_module(name).__file__" in script_text
+        assert "['naviertwin', 'naviertwin.core', 'naviertwin.utils']" in script_text
+        assert "installed import for {module_name} resolved to repo checkout" in script_text
+        assert "installed import for {module_name} did not resolve inside venv" in script_text
 
     assert "system_site_packages=True" not in sdist_smoke
     assert "_build_wheel_from_sdist" in sdist_smoke

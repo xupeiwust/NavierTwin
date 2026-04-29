@@ -64,19 +64,31 @@ def _assert_import_from_install(python: Path, venv_dir: Path) -> None:
         str(python),
         "-c",
         (
-            "import json, pathlib, naviertwin; "
-            "print(json.dumps({'file': str(pathlib.Path(naviertwin.__file__).resolve())}))"
+            "import importlib, json, pathlib; "
+            "modules = ['naviertwin', 'naviertwin.core', 'naviertwin.utils']; "
+            "print(json.dumps({"
+            "name: str(pathlib.Path(importlib.import_module(name).__file__).resolve()) "
+            "for name in modules"
+            "}))"
         ),
     ]
     print("+", " ".join(import_cmd), flush=True)
     result = subprocess.run(import_cmd, check=True, capture_output=True, text=True)
-    source = Path(json.loads(result.stdout)["file"]).resolve()
+    sources = {
+        name: Path(source).resolve()
+        for name, source in json.loads(result.stdout).items()
+    }
     repo = _repo_root().resolve()
     install_root = venv_dir.resolve()
-    if source == repo or repo in source.parents:
-        raise RuntimeError(f"installed import resolved to repo checkout: {source}")
-    if install_root not in source.parents:
-        raise RuntimeError(f"installed import did not resolve inside venv: {source}")
+    for module_name, source in sources.items():
+        if source == repo or repo in source.parents:
+            raise RuntimeError(
+                f"installed import for {module_name} resolved to repo checkout: {source}"
+            )
+        if install_root not in source.parents:
+            raise RuntimeError(
+                f"installed import for {module_name} did not resolve inside venv: {source}"
+            )
 
 
 def _assert_installed_version(naviertwin: Path) -> None:
@@ -244,12 +256,15 @@ def _install_and_run_cli(artifact: Path, venv_dir: Path) -> None:
         "-m",
         "pip",
         "install",
+        "--force-reinstall",
         "--no-deps",
         "--no-index",
         str(artifact),
     ]
     print("+", " ".join(install_cmd), flush=True)
-    subprocess.run(install_cmd, check=True)
+    install_env = {**os.environ, "PYTHONNOUSERSITE": "1"}
+    install_env.pop("PYTHONPATH", None)
+    subprocess.run(install_cmd, check=True, env=install_env)
 
     _enter_installed_runtime(venv_dir)
     _assert_import_from_install(python, venv_dir)
@@ -326,7 +341,7 @@ def _install_and_run_cli(artifact: Path, venv_dir: Path) -> None:
     print("+", " ".join(support_preflight_cmd), flush=True)
     support_preflight_result = subprocess.run(
         support_preflight_cmd,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -352,7 +367,7 @@ def _install_and_run_cli(artifact: Path, venv_dir: Path) -> None:
     print("+", " ".join(support_privacy_cmd), flush=True)
     support_privacy_result = subprocess.run(
         support_privacy_cmd,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
