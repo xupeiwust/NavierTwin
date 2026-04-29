@@ -201,6 +201,16 @@ class TestDocsStructure:
         ]:
             assert f".. automodule:: {automodule}" in page
 
+    def test_flow_control_api_docs_are_discoverable(self) -> None:
+        """Flow-control docs should expose shipped policy optimization APIs."""
+        index = (DOCS / "source" / "index.rst").read_text(encoding="utf-8")
+        page = (DOCS / "source" / "api" / "flow_control.rst").read_text(
+            encoding="utf-8"
+        )
+
+        assert "api/flow_control" in index
+        assert ".. automodule:: naviertwin.core.flow_control" in page
+
     def test_makefile(self) -> None:
         mf = DOCS / "Makefile"
         assert mf.exists()
