@@ -629,6 +629,7 @@ class MainWindow(QMainWindow):
             "8000",
         ])
         self._server_process = process
+        process.finished.connect(self._on_api_server_finished)
         process.start()
         if not process.waitForStarted(1000):
             self._set_status("API 서버 시작 실패")
@@ -660,6 +661,18 @@ class MainWindow(QMainWindow):
         process = QProcess(self)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         return process
+
+    def _on_api_server_finished(
+        self,
+        exit_code: int,
+        _exit_status: QProcess.ExitStatus,
+    ) -> None:
+        """API 서버 프로세스 종료 상태를 GUI에 반영한다."""
+        self._server_process = None
+        if exit_code == 0:
+            self._set_status("API 서버 종료됨")
+        else:
+            self._set_status(f"API 서버 종료됨: exit={exit_code}")
 
     def _show_about(self) -> None:
         QMessageBox.about(

@@ -103,6 +103,23 @@ def test_api_server_start_uses_qprocess(qtbot, monkeypatch: pytest.MonkeyPatch) 
     assert messages
     assert win._server_process is fake
     assert "API 서버 실행 중" in win._status_label.text()
+    assert fake.finished.callbacks
+
+
+def test_api_server_finish_updates_status(qtbot) -> None:
+    from PySide6.QtCore import QProcess
+
+    from naviertwin.gui.main_window import MainWindow
+
+    win = MainWindow(confirm_on_close=False)
+    qtbot.addWidget(win)
+    fake = _FakeProcess(started=True)
+    win._server_process = fake
+
+    win._on_api_server_finished(2, QProcess.ExitStatus.NormalExit)
+
+    assert win._server_process is None
+    assert win._status_label.text() == "API 서버 종료됨: exit=2"
 
 
 def test_api_server_stop_terminates_running_process(qtbot) -> None:
@@ -124,6 +141,7 @@ class _FakeProcess:
     def __init__(self, *, started: bool) -> None:
         from PySide6.QtCore import QProcess
 
+        self.finished = _FakeSignal()
         self.program = ""
         self.args: list[str] = []
         self.started = False
@@ -161,3 +179,11 @@ class _FakeProcess:
 
     def kill(self) -> None:
         self.killed = True
+
+
+class _FakeSignal:
+    def __init__(self) -> None:
+        self.callbacks: list[object] = []
+
+    def connect(self, callback: object) -> None:
+        self.callbacks.append(callback)
