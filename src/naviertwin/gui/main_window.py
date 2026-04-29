@@ -264,6 +264,10 @@ class MainWindow(QMainWindow):
         doctor_action.triggered.connect(self._show_doctor_report)
         self._help_menu.addAction(doctor_action)
 
+        support_action = QAction("지원 번들 생성(&B)", self)
+        support_action.triggered.connect(self._create_support_bundle)
+        self._help_menu.addAction(support_action)
+
         update_action = QAction("업데이트 확인(&U)", self)
         update_action.triggered.connect(self._check_for_updates)
         self._help_menu.addAction(update_action)
@@ -495,6 +499,39 @@ class MainWindow(QMainWindow):
             self,
             "NavierTwin 환경 진단",
             format_doctor_report(report),
+        )
+
+    def _create_support_bundle(self) -> None:
+        outdir = QFileDialog.getExistingDirectory(
+            self,
+            "지원 번들 저장 폴더 선택",
+            "",
+        )
+        if outdir:
+            self._create_support_bundle_path(Path(outdir))
+
+    def _create_support_bundle_path(self, outdir: Path) -> None:
+        """고객 지원용 진단 번들을 생성하고 결과를 표시한다."""
+        from naviertwin.utils.support_bundle import build_support_bundle
+
+        try:
+            metadata = build_support_bundle(
+                outdir,
+                include_optional=True,
+                zip_bundle=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._set_status("지원 번들 생성 실패")
+            QMessageBox.warning(self, "지원 번들 생성 실패", str(exc))
+            return
+
+        status = str(metadata.get("status", "unknown"))
+        zip_path = str(metadata.get("zip_path", outdir / "support-bundle.zip"))
+        self._set_status(f"지원 번들 생성: {status}")
+        QMessageBox.information(
+            self,
+            "지원 번들 생성 완료",
+            f"상태: {status}\n저장 위치: {zip_path}",
         )
 
     def _open_recent_project(self) -> None:
