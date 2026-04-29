@@ -433,6 +433,28 @@ class TestDocsStructure:
                 "compute_spod",
                 "pde_find_1d",
             ],
+            "naviertwin.core.flow_analysis": [
+                "BaseFlowAnalyzer",
+                "mean_field",
+                "welch_psd",
+                "pressure_force",
+                "mass_flux",
+                "interp_field",
+                "cart_to_cyl",
+                "slice_axis_aligned",
+                "safe_eval",
+                "RunningMoments",
+                "savgol_filter",
+                "percentile",
+                "eof_decomposition",
+                "ks_test_normal",
+                "trigger_average",
+                "gradient_2d",
+                "find_critical_points",
+                "anisotropy_tensor",
+                "connected_components_2d",
+                "tet_volume",
+            ],
         }
 
         for module_name, symbols in expected.items():
