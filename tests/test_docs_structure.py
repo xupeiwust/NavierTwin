@@ -42,6 +42,8 @@ class TestDocsStructure:
             "gui",
             "api",
             "post_process_facade",
+            "analysis",
+            "tools",
         ]:
             assert (api / f"{pkg}.rst").exists()
 
@@ -93,6 +95,37 @@ class TestDocsStructure:
         for automodule in [
             "naviertwin.api",
             "naviertwin.api.server",
+        ]:
+            assert f".. automodule:: {automodule}" in page
+
+    def test_analysis_api_docs_are_discoverable(self) -> None:
+        """Analysis API docs should expose shipped customer-facing utilities."""
+        index = (DOCS / "source" / "index.rst").read_text(encoding="utf-8")
+        page = (DOCS / "source" / "api" / "analysis.rst").read_text(
+            encoding="utf-8"
+        )
+
+        assert "api/analysis" in index
+        for automodule in [
+            "naviertwin.core.analysis",
+            "naviertwin.core.analysis.boundary_layer",
+            "naviertwin.core.analysis.vortex_core",
+            "naviertwin.core.analysis.stft",
+            "naviertwin.core.analysis.latent_embedding",
+        ]:
+            assert f".. automodule:: {automodule}" in page
+
+    def test_tools_api_docs_are_discoverable(self) -> None:
+        """Tools API docs should expose shipped mesh generation/cleanup helpers."""
+        index = (DOCS / "source" / "index.rst").read_text(encoding="utf-8")
+        page = (DOCS / "source" / "api" / "tools.rst").read_text(encoding="utf-8")
+
+        assert "api/tools" in index
+        for automodule in [
+            "naviertwin.core.tools",
+            "naviertwin.core.tools.mesh_generator",
+            "naviertwin.core.tools.mesh_processor",
+            "naviertwin.core.tools.mesh_quality",
         ]:
             assert f".. automodule:: {automodule}" in page
 
@@ -241,6 +274,15 @@ class TestDocsStructure:
                 "list_zones",
                 "parse_section_ids",
                 "list_zone_names",
+            ],
+            "naviertwin.core.analysis": ["embed_2d", "embedding_spread"],
+            "naviertwin.core.tools": [
+                "generate_channel",
+                "generate_cylinder",
+                "generate_airfoil",
+                "simplify",
+                "smooth",
+                "quality_report",
             ],
             "naviertwin.core.report": ["ReportGenerator", "HTMLReport", "MarkdownReport"],
             "naviertwin.core.multi_fidelity": ["AdditiveCoKriging", "freeze_layers"],
