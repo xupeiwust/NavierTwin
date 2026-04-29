@@ -7,6 +7,8 @@ Signals:
 from __future__ import annotations
 
 import json
+import math
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -85,6 +87,7 @@ class ExportPanel(QWidget):
             ".vtu (VTK UnstructuredGrid)",
             ".vtk (레거시 VTK)",
             ".csv (점 데이터)",
+            ".html/.pdf (고객 보고서)",
         ])
         self._format_combo.currentIndexChanged.connect(self._on_format_changed)
         options_form.addRow("포맷:", self._format_combo)
@@ -194,6 +197,7 @@ class ExportPanel(QWidget):
             "VTK UnstructuredGrid (*.vtu)",
             "VTK Legacy (*.vtk)",
             "CSV (*.csv)",
+            "Report (*.html *.pdf)",
         ]
         path, _ = QFileDialog.getSaveFileName(self, "저장 경로 선택", "", filters[fmt_idx])
         if path:
@@ -218,8 +222,10 @@ class ExportPanel(QWidget):
                 self._export_ntwin(path)
             elif fmt_idx in (1, 2):
                 self._export_vtk(path)
-            else:
+            elif fmt_idx == 3:
                 self._export_csv(path)
+            else:
+                self._export_report(path)
         except Exception as exc:
             self._log(f"[ERROR] 내보내기 실패: {exc}")
 
@@ -285,6 +291,24 @@ class ExportPanel(QWidget):
         self._log(f"✓ CSV 저장: {path} ({len(pts)} rows)")
         self.export_done.emit(str(path))
 
+    def _export_report(self, path: Path) -> None:
+        if self._dataset is None:
+            self._log("[WARN] Dataset이 없습니다.")
+            return
+
+        from naviertwin.core.report.generator import ReportGenerator
+
+        data = self._build_report_data(path)
+        generator = ReportGenerator()
+        if path.suffix.lower() == ".pdf":
+            out = generator.render_pdf(data, path)
+        else:
+            if path.suffix.lower() not in {".html", ".htm"}:
+                path = path.with_suffix(".html")
+            out = generator.render_html(data, path)
+        self._log(f"✓ 보고서 저장: {out}")
+        self.export_done.emit(str(out))
+
     def _save_project(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
             self, "프로젝트 저장", "project.ntwin", "NavierTwin Project (*.ntwin)"
@@ -342,6 +366,90 @@ class ExportPanel(QWidget):
             "reducer": getattr(reducer, "training_metadata", None),
             "surrogate": getattr(surrogate, "training_metadata", None),
         }
+
+    def _build_report_data(self, path: Path) -> dict[str, Any]:
+        """현재 GUI 상태를 ReportGenerator 입력 데이터로 변환한다."""
+        assert self._dataset is not None
+        project_meta = self._project_metadata()
+        model_info: dict[str, Any] = {
+            "n_points": int(self._dataset.n_points),
+            "n_cells": int(self._dataset.n_cells),
+            "n_time_steps": int(self._dataset.n_time_steps),
+            "fields": ", ".join(self._dataset.field_names) or "none",
+        }
+        if self._engine is not None:
+            model_info.update(self._extract_engine_metadata(self._engine))
+        elif isinstance(project_meta.get("engine"), Mapping):
+            model_info.update(dict(project_meta["engine"]))
+
+        return {
+            "project": path.stem or "NavierTwin Report",
+            "summary": (
+                "NavierTwin CFD digital-twin report: "
+                f"{self._dataset.n_points} points, {self._dataset.n_cells} cells, "
+                f"{self._dataset.n_time_steps} time steps"
+            ),
+            "metrics": self._report_metrics(project_meta),
+            "model_info": model_info,
+            "figures": [],
+            "notes": "Generated from the NavierTwin desktop Export panel.",
+        }
+
+    def _project_metadata(self) -> dict[str, Any]:
+        """dataset/engine에 부착된 프로젝트 메타데이터를 반환한다."""
+        dataset_meta = getattr(self._dataset, "metadata", None)
+        if isinstance(dataset_meta, Mapping):
+            project_meta = dataset_meta.get("project_metadata")
+            if isinstance(project_meta, Mapping):
+                return dict(project_meta)
+
+        engine_meta = getattr(self._engine, "project_metadata", None)
+        if isinstance(engine_meta, Mapping):
+            return dict(engine_meta)
+        return {}
+
+    def _report_metrics(self, project_meta: Mapping[str, Any]) -> dict[str, float]:
+        """프로젝트/엔진 메타데이터에서 보고서용 수치 지표를 추출한다."""
+        candidates: list[object] = [
+            project_meta.get("metrics"),
+            project_meta.get("validation_metrics"),
+        ]
+        engine_meta = project_meta.get("engine")
+        if isinstance(engine_meta, Mapping):
+            candidates.append(engine_meta.get("metrics"))
+            surrogate_meta = engine_meta.get("surrogate")
+            if isinstance(surrogate_meta, Mapping):
+                candidates.append(surrogate_meta.get("validation_metrics"))
+                candidates.append(surrogate_meta.get("metrics"))
+
+        surrogate = getattr(self._engine, "surrogate", None)
+        surrogate_meta = getattr(surrogate, "training_metadata", None)
+        if isinstance(surrogate_meta, Mapping):
+            candidates.append(surrogate_meta.get("validation_metrics"))
+            candidates.append(surrogate_meta.get("metrics"))
+
+        for candidate in candidates:
+            metrics = self._numeric_mapping(candidate)
+            if metrics:
+                return metrics
+        return {}
+
+    @staticmethod
+    def _numeric_mapping(value: object) -> dict[str, float]:
+        """유한한 수치 항목만 dict[str, float]로 반환한다."""
+        if not isinstance(value, Mapping):
+            return {}
+        out: dict[str, float] = {}
+        for key, raw in value.items():
+            if not isinstance(key, str):
+                continue
+            try:
+                number = float(raw)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(number):
+                out[key] = number
+        return out
 
     def _write_metadata_sidecar(self, path: Path, metadata: dict[str, Any]) -> None:
         """프로젝트 메타데이터 sidecar JSON을 기록한다."""
