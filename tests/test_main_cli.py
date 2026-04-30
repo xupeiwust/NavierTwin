@@ -134,6 +134,8 @@ class TestBuildParser:
                 str(tmp_path / "snapshots"),
                 "--field-column",
                 "U",
+                "--max-rmse",
+                "0.1",
                 "--json",
             ]
         )
@@ -141,6 +143,7 @@ class TestBuildParser:
         assert args.engine.endswith("engine.pkl")
         assert args.csv_snapshots.endswith("snapshots")
         assert args.field_column == "U"
+        assert args.max_rmse == 0.1
         assert args.as_json is True
 
     def test_parse_autorefine_subcommand(self) -> None:
@@ -317,6 +320,9 @@ class TestRunBuildTwin:
             field_column="U",
             params=None,
             param_columns=None,
+            max_rmse=None,
+            min_r2=None,
+            max_relative_l2=None,
             output=str(tmp_path / "validation.json"),
             as_json=True,
         )
@@ -325,8 +331,30 @@ class TestRunBuildTwin:
         assert validate_code == 0
         assert validate_payload["validation"]["truth_shape"] == [8, 10]
         assert validate_payload["validation"]["prediction_shape"] == [8, 10]
+        assert validate_payload["acceptance"]["passed"] is True
         assert "relative_l2" in validate_payload["metrics"]
         assert (tmp_path / "validation.json").exists()
+
+        gated_code = _run_validate_twin(
+            engine_path=str(tmp_path / "twin" / "engine.pkl"),
+            input_path=None,
+            csv_snapshots=",".join(str(path) for path in paths),
+            field=None,
+            field_column="U",
+            params=None,
+            param_columns=None,
+            max_rmse=0.0,
+            min_r2=None,
+            max_relative_l2=None,
+            output=None,
+            as_json=True,
+        )
+        gated_payload = json.loads(capsys.readouterr().out)
+
+        assert gated_code == 1
+        assert gated_payload["status"] == "failed"
+        assert gated_payload["acceptance"]["configured"] is True
+        assert gated_payload["acceptance"]["checks"][0]["metric"] == "rmse"
 
     def test_run_build_twin_reports_small_dataset(self, tmp_path, capsys) -> None:
         from naviertwin.main import _run_build_twin

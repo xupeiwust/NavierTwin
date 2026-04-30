@@ -92,11 +92,12 @@ validate-twin
 
 .. code-block:: bash
 
-   naviertwin validate-twin --engine /tmp/naviertwin-twin/engine.pkl --csv-snapshots "case/snapshots/*.csv" --field-column U --output /tmp/naviertwin-validation.json --json
+   naviertwin validate-twin --engine /tmp/naviertwin-twin/engine.pkl --csv-snapshots "case/snapshots/*.csv" --field-column U --max-rmse 0.05 --min-r2 0.98 --output /tmp/naviertwin-validation.json --json
 
 Expected: reloads a saved ``TwinEngine``, predicts every supplied validation
 parameter row, compares the reconstructed field against CFD/CSV reference
-snapshots, and writes RMSE/R²/relative-L2/max-error metrics.
+snapshots, writes RMSE/R²/relative-L2/max-error metrics, and exits non-zero when
+configured acceptance thresholds fail.
 
 preflight
 ---------

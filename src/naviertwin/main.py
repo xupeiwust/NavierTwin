@@ -157,6 +157,14 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="쉼표 구분 파라미터 컬럼명. 생략하면 numeric 컬럼 전체 사용",
     )
+    p_validate.add_argument("--max-rmse", type=float, default=None, help="허용 최대 RMSE")
+    p_validate.add_argument("--min-r2", type=float, default=None, help="허용 최소 R²")
+    p_validate.add_argument(
+        "--max-relative-l2",
+        type=float,
+        default=None,
+        help="허용 최대 relative L2 error",
+    )
     p_validate.add_argument("--output", default=None, help="검증 metrics JSON 저장 경로")
     p_validate.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
 
@@ -338,6 +346,9 @@ def main() -> None:
                 field_column=args.field_column,
                 params=args.params,
                 param_columns=args.param_columns,
+                max_rmse=args.max_rmse,
+                min_r2=args.min_r2,
+                max_relative_l2=args.max_relative_l2,
                 output=args.output,
                 as_json=args.as_json,
             )
@@ -995,6 +1006,9 @@ def _run_validate_twin(
     field_column: str | None,
     params: str | None,
     param_columns: str | None,
+    max_rmse: float | None = None,
+    min_r2: float | None = None,
+    max_relative_l2: float | None = None,
     output: str | None,
     as_json: bool,
 ) -> int:
@@ -1028,12 +1042,19 @@ def _run_validate_twin(
         metrics = compute_all_metrics(truth, prediction)
         per_sample_rmse = np.sqrt(np.mean((truth - prediction) ** 2, axis=0))
         worst_index = int(np.argmax(per_sample_rmse)) if per_sample_rmse.size else 0
+        acceptance = _validate_twin_acceptance(
+            metrics,
+            max_rmse=max_rmse,
+            min_r2=min_r2,
+            max_relative_l2=max_relative_l2,
+        )
 
         payload = {
-            "status": "ok",
+            "status": "ok" if acceptance["passed"] else "failed",
             "engine": str(engine_file),
             "field": selected_field,
             "source": source_meta,
+            "acceptance": acceptance,
             "validation": {
                 "n_features": int(n_features),
                 "n_snapshots": int(n_snapshots),
@@ -1067,9 +1088,46 @@ def _run_validate_twin(
             f"rmse={metrics.get('rmse', float('nan')):.6g}, "
             f"r2={metrics.get('r2', float('nan')):.6g}"
         )
+        if not acceptance["passed"]:
+            print("acceptance: failed")
         if output_path is not None:
             print(f"output: {output_path}")
-    return 0
+    return 0 if acceptance["passed"] else 1
+
+
+def _validate_twin_acceptance(
+    metrics: dict[str, float],
+    *,
+    max_rmse: float | None,
+    min_r2: float | None,
+    max_relative_l2: float | None,
+) -> dict[str, Any]:
+    """validate-twin threshold 설정을 pass/fail 결과로 변환한다."""
+    checks: list[dict[str, Any]] = []
+    specs = [
+        ("rmse", "<=", max_rmse),
+        ("r2", ">=", min_r2),
+        ("relative_l2", "<=", max_relative_l2),
+    ]
+    for metric, op, threshold in specs:
+        if threshold is None:
+            continue
+        value = float(metrics.get(metric, float("nan")))
+        passed = value <= threshold if op == "<=" else value >= threshold
+        checks.append(
+            {
+                "metric": metric,
+                "op": op,
+                "threshold": float(threshold),
+                "value": value,
+                "passed": bool(passed),
+            }
+        )
+    return {
+        "configured": bool(checks),
+        "passed": all(check["passed"] for check in checks),
+        "checks": checks,
+    }
 
 
 def _align_twin_prediction(prediction: Any, expected_shape: tuple[int, int]) -> Any:
