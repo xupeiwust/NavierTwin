@@ -359,6 +359,7 @@ class TestDocsStructure:
                 "PoiseuilleReq",
                 "PODReq",
                 "BayesianOptReq",
+                "PreflightReq",
                 "TwinBuildReq",
                 "TwinPredictReq",
                 "TwinBenchmarkReq",

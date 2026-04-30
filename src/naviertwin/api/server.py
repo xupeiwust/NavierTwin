@@ -4,6 +4,7 @@
     - GET  /health                        : 헬스 체크
     - POST /reduce                         : reducer 수행, 모드/에너지 반환
     - POST /reduce/pod                     : POD 전용(하위 호환)
+    - POST /preflight                      : CFD 입력 readiness 점검
     - POST /twin/build                     : CFD/CSV dataset → TwinEngine 산출물 생성
     - POST /twin/predict                   : 저장/배포된 TwinEngine 예측
     - POST /twin/benchmark                 : TwinEngine 예측 latency/SLO 측정
@@ -59,6 +60,9 @@ if _HAS_FASTAPI:
         n_initial: int = 5
         max_iter: int = 10
         problem: str = "quadratic"
+
+    class PreflightReq(BaseModel):
+        path: str
 
     class TwinBuildReq(BaseModel):
         input_path: Optional[str] = None
@@ -207,6 +211,19 @@ def create_app() -> Any:
         # 하위 호환: 기존 요청은 reducer_kind 없이 /reduce/pod를 호출한다.
         req.reducer_kind = "pod"
         return _run_reducer(req)
+
+    @app.post("/preflight")
+    def preflight(req: PreflightReq = Body(...)) -> dict[str, Any]:
+        from naviertwin.core.validation.dataset_preflight import (
+            build_dataset_preflight_report,
+        )
+
+        try:
+            if not req.path.strip():
+                raise ValueError("path is required")
+            return build_dataset_preflight_report(req.path)
+        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise fastapi.HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/twin/build")
     def twin_build(req: TwinBuildReq = Body(...)) -> dict[str, Any]:
@@ -503,6 +520,7 @@ __all__ = [
     "LBMReq",
     "PODReq",
     "PoiseuilleReq",
+    "PreflightReq",
     "TwinBuildReq",
     "TwinBenchmarkReq",
     "TwinPackageAcceptReq",

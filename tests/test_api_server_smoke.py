@@ -10,7 +10,7 @@ pytest.importorskip("fastapi", reason="FastAPI is required for REST API smoke te
 def test_advertised_rest_endpoints_return_json() -> None:
     import numpy as np
 
-    from naviertwin.api import CouetteReq, LBMReq, PODReq, create_app
+    from naviertwin.api import CouetteReq, LBMReq, PODReq, PreflightReq, create_app
 
     app = create_app()
     route_map = {
@@ -18,6 +18,7 @@ def test_advertised_rest_endpoints_return_json() -> None:
         for route in app.routes
         if hasattr(route, "path") and hasattr(route, "endpoint")
     }
+    assert "/preflight" in route_map
     assert "/twin/build" in route_map
     assert "/twin/predict" in route_map
     assert "/twin/benchmark" in route_map
@@ -48,6 +49,31 @@ def test_advertised_rest_endpoints_return_json() -> None:
     assert lbm_payload["n_snapshots"] == 2
     assert lbm_payload["shape"] == [2, 6, 6, 3]
     assert abs(lbm_payload["ux_max"]) < 1.0
+
+    preflight_payload = route_map["/preflight"](
+        PreflightReq(path="tests/fixtures/tiny_square.su2")
+    )
+    assert preflight_payload["status"] == "ok"
+    assert preflight_payload["readiness_score"] == 100
+    assert preflight_payload["summary"]["n_points"] == 4
+
+
+def test_preflight_endpoint_reports_missing_input(tmp_path) -> None:
+    from naviertwin.api import PreflightReq, create_app
+
+    app = create_app()
+    route_map = {
+        route.path: route.endpoint
+        for route in app.routes
+        if hasattr(route, "path") and hasattr(route, "endpoint")
+    }
+
+    payload = route_map["/preflight"](PreflightReq(path=str(tmp_path / "missing.su2")))
+
+    assert payload["status"] == "error"
+    assert payload["readiness_score"] == 0
+    assert payload["errors"] == ["path_exists"]
+    assert payload["checks"][0]["code"] == "INPUT_PATH_MISSING"
 
 
 def _write_snapshot_series(tmp_path, *, steps: int = 8, width: int = 6) -> list:
