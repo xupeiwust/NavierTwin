@@ -65,6 +65,17 @@ Expected: evaluates the configured ROM/surrogate candidates on the same
 synthetic CFD-like snapshot set, sorts them by validation RMSE, and prints a
 ranked table or JSON payload with ``best`` and ``rows``.
 
+build-twin
+----------
+
+.. code-block:: bash
+
+   naviertwin build-twin --csv-snapshots "case/snapshots/*.csv" --field-column U --outdir /tmp/naviertwin-twin --json
+
+Expected: loads a CFD reader input or CSV snapshot sequence, trains a
+``NavierTwinPipeline`` with a validation split, and writes ``metrics.json``,
+``manifest.json``, ``pipeline.h5``, and ``report.html``.
+
 preflight
 ---------
 

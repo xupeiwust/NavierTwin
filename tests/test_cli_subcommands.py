@@ -13,6 +13,7 @@ EXPECTED_SUBCOMMANDS = [
     "pipeline",
     "pipeline-demo",
     "model-sweep",
+    "build-twin",
     "preflight",
     "support-bundle",
     "autorefine",
@@ -88,3 +89,46 @@ class TestCLISubcommands:
         assert payload["configs"] == 2
         assert len(payload["rows"]) == 2
         assert payload["best"]["reducer_kind"] == "pod"
+
+    def test_build_twin_subcommand_runs_json(self, tmp_path) -> None:
+        paths = []
+        for step in range(10):
+            path = tmp_path / f"snapshot_{step:03d}.csv"
+            rows = ["x,U"]
+            for index in range(8):
+                rows.append(f"{index},{step * 0.2 + index * 0.01}")
+            path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            paths.append(path)
+
+        outdir = tmp_path / "twin"
+        env = {**os.environ, "PYTHONPATH": "src"}
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "naviertwin.main",
+                "build-twin",
+                "--csv-snapshots",
+                ",".join(str(path) for path in paths),
+                "--field-column",
+                "U",
+                "--outdir",
+                str(outdir),
+                "--n-modes",
+                "2",
+                "--surrogate",
+                "rbf",
+                "--validation-count",
+                "2",
+                "--json",
+            ],
+            capture_output=True, text=True, env=env,
+        )
+        assert result.returncode == 0, result.stderr
+
+        payload = json.loads(result.stdout)
+        assert payload["status"] == "ok"
+        assert payload["training"]["n_snapshots"] == 10
+        assert payload["training"]["validation_count"] == 2
+        assert (outdir / "pipeline.h5").exists()
+        assert (outdir / "manifest.json").exists()

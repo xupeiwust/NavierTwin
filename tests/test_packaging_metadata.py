@@ -146,6 +146,7 @@ def test_readme_documents_shipped_cli_surface() -> None:
         "python scripts/license_report.py --json --output",
         "naviertwin pipeline-demo --outdir",
         "naviertwin model-sweep --reducers pod",
+        "naviertwin build-twin --csv-snapshots",
     ]
 
     for command in expected_commands:

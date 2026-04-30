@@ -77,6 +77,30 @@ class TestBuildParser:
         assert args.surrogates == "rbf"
         assert args.as_json is True
 
+    def test_parse_build_twin_subcommand(self, tmp_path) -> None:
+        from naviertwin.main import _build_parser
+
+        p = _build_parser()
+        args = p.parse_args(
+            [
+                "build-twin",
+                "--csv-snapshots",
+                "snap_*.csv",
+                "--field-column",
+                "U",
+                "--outdir",
+                str(tmp_path),
+                "--validation-count",
+                "2",
+                "--json",
+            ]
+        )
+        assert args.command == "build-twin"
+        assert args.csv_snapshots == "snap_*.csv"
+        assert args.field_column == "U"
+        assert args.validation_count == 2
+        assert args.as_json is True
+
     def test_parse_autorefine_subcommand(self) -> None:
         from naviertwin.main import _build_parser
 
@@ -183,6 +207,71 @@ class TestRunModelSweep:
         assert code == 2
         assert output.out == ""
         assert "model-sweep error:" in output.err
+
+
+class TestRunBuildTwin:
+    def test_run_build_twin_from_csv_snapshots(self, tmp_path, capsys) -> None:
+        pytest.importorskip("h5py")
+        pytest.importorskip("pandas")
+        pytest.importorskip("sklearn")
+        from naviertwin.main import _run_build_twin
+
+        paths = []
+        for step in range(10):
+            path = tmp_path / f"snapshot_{step:03d}.csv"
+            rows = ["x,U"]
+            for index in range(8):
+                rows.append(f"{index},{step * 0.2 + index * 0.01}")
+            path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            paths.append(path)
+
+        code = _run_build_twin(
+            input_path=None,
+            csv_snapshots=",".join(str(path) for path in paths),
+            field=None,
+            field_column="U",
+            params=None,
+            param_columns=None,
+            outdir=str(tmp_path / "twin"),
+            reducer="pod",
+            n_modes=2,
+            surrogate="rbf",
+            validation_count=2,
+            as_json=True,
+        )
+        payload = json.loads(capsys.readouterr().out)
+
+        assert code == 0
+        assert payload["status"] == "ok"
+        assert payload["artifacts"]["checkpoint"].endswith("pipeline.h5")
+        assert payload["training"]["train_count"] == 8
+        assert "rmse" in payload["metrics"]
+
+    def test_run_build_twin_reports_small_dataset(self, tmp_path, capsys) -> None:
+        from naviertwin.main import _run_build_twin
+
+        path = tmp_path / "snapshot.csv"
+        path.write_text("x,U\n0,1\n1,2\n", encoding="utf-8")
+
+        code = _run_build_twin(
+            input_path=None,
+            csv_snapshots=str(path),
+            field=None,
+            field_column="U",
+            params=None,
+            param_columns=None,
+            outdir=str(tmp_path / "twin"),
+            reducer="pod",
+            n_modes=2,
+            surrogate="rbf",
+            validation_count=2,
+            as_json=True,
+        )
+        output = capsys.readouterr()
+
+        assert code == 2
+        assert output.out == ""
+        assert "build-twin error:" in output.err
 
 
 class TestRunAutoRefine:

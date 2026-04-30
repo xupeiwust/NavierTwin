@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
+from typing import Any
 
 from naviertwin import __version__
 
@@ -94,6 +96,34 @@ def _build_parser() -> argparse.ArgumentParser:
     p_sweep.add_argument("--features", type=int, default=48, help="합성 field feature 개수")
     p_sweep.add_argument("--seed", type=int, default=7, help="재현 가능한 sweep seed")
     p_sweep.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
+
+    # build-twin
+    p_build = sub.add_parser("build-twin", help="CFD/CSV 데이터셋에서 디지털 트윈 산출물 생성")
+    source = p_build.add_mutually_exclusive_group(required=True)
+    source.add_argument("--input", default=None, help="ReaderFactory로 읽을 CFD 파일/케이스 경로")
+    source.add_argument(
+        "--csv-snapshots",
+        default=None,
+        help="쉼표 구분 CSV 파일/글롭/디렉토리. 각 CSV는 하나의 snapshot",
+    )
+    p_build.add_argument("--field", default=None, help="CFD 입력에서 사용할 필드명")
+    p_build.add_argument("--field-column", default=None, help="CSV snapshot에서 사용할 컬럼명")
+    p_build.add_argument("--params", default=None, help="선택적 파라미터 CSV 경로")
+    p_build.add_argument(
+        "--param-columns",
+        default=None,
+        help="쉼표 구분 파라미터 컬럼명. 생략하면 numeric 컬럼 전체 사용",
+    )
+    p_build.add_argument("--outdir", required=True, help="metrics/report/checkpoint 출력 디렉토리")
+    p_build.add_argument(
+        "--reducer",
+        choices=["pod", "incremental_pod", "mrpod", "ae"],
+        default="pod",
+    )
+    p_build.add_argument("--n-modes", type=int, default=3)
+    p_build.add_argument("--surrogate", choices=["kriging", "rbf"], default="rbf")
+    p_build.add_argument("--validation-count", type=int, default=3)
+    p_build.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
 
     # preflight
     p_preflight = sub.add_parser("preflight", help="CFD 입력 데이터 readiness 점검")
@@ -232,6 +262,23 @@ def main() -> None:
                 samples=args.samples,
                 features=args.features,
                 seed=args.seed,
+                as_json=args.as_json,
+            )
+        )
+    elif args.command == "build-twin":
+        sys.exit(
+            _run_build_twin(
+                input_path=args.input,
+                csv_snapshots=args.csv_snapshots,
+                field=args.field,
+                field_column=args.field_column,
+                params=args.params,
+                param_columns=args.param_columns,
+                outdir=args.outdir,
+                reducer=args.reducer,
+                n_modes=args.n_modes,
+                surrogate=args.surrogate,
+                validation_count=args.validation_count,
                 as_json=args.as_json,
             )
         )
@@ -522,6 +569,248 @@ def _run_model_sweep(
                 f"{best['reducer_kind']} n_modes={best['n_modes']} "
                 f"{best['surrogate_kind']} rmse={best['rmse']:.6g}"
             )
+    return 0
+
+
+def _expand_csv_snapshot_paths(value: str) -> list[Path]:
+    """CSV snapshot 입력 문자열을 정렬된 경로 목록으로 확장한다."""
+    from glob import glob
+
+    paths: list[Path] = []
+    for token in value.split(","):
+        raw = token.strip()
+        if not raw:
+            continue
+        candidate = Path(raw).expanduser()
+        if candidate.is_dir():
+            matches = sorted(candidate.glob("*.csv"))
+        else:
+            matches = [Path(match) for match in sorted(glob(str(candidate)))]
+            if not matches:
+                matches = [candidate]
+        paths.extend(matches)
+
+    unique_paths = list(dict.fromkeys(path.resolve() for path in paths))
+    if not unique_paths:
+        raise ValueError("csv-snapshots must resolve to at least one CSV file")
+    missing = [str(path) for path in unique_paths if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"CSV snapshot file not found: {missing[0]}")
+    return unique_paths
+
+
+def _load_build_twin_params(
+    *,
+    params_path: str | None,
+    param_columns: str | None,
+    n_snapshots: int,
+) -> Any:
+    """사용자 파라미터 CSV 또는 기본 normalized index를 로드한다."""
+    import numpy as np
+
+    if params_path is None:
+        return np.linspace(0.0, 1.0, n_snapshots).reshape(-1, 1)
+
+    try:
+        import pandas as pd
+    except ImportError as exc:
+        raise RuntimeError("pandas required to read --params CSV") from exc
+
+    df = pd.read_csv(params_path)
+    if param_columns:
+        columns = [column.strip() for column in param_columns.split(",") if column.strip()]
+        invalid = sorted(set(columns) - set(map(str, df.columns)))
+        if invalid:
+            raise ValueError(f"unsupported param-columns: {','.join(invalid)}")
+    else:
+        columns = list(df.select_dtypes(include=["number"]).columns)
+    if not columns:
+        raise ValueError("--params must contain at least one numeric column")
+
+    values = df[columns].to_numpy(dtype=np.float64)
+    if values.shape[0] != n_snapshots:
+        raise ValueError(
+            f"params row count mismatch: {values.shape[0]} vs snapshots {n_snapshots}"
+        )
+    return values
+
+
+def _load_build_twin_snapshots(
+    *,
+    input_path: str | None,
+    csv_snapshots: str | None,
+    field: str | None,
+    field_column: str | None,
+) -> tuple[Any, str, dict[str, object]]:
+    """CFD reader 또는 CSV 시퀀스에서 snapshot 행렬을 로드한다."""
+    import numpy as np
+
+    if csv_snapshots is not None:
+        from naviertwin.core.cfd_reader.csv_snapshots import load_csv_snapshots
+
+        paths = _expand_csv_snapshot_paths(csv_snapshots)
+        column = field_column or field
+        if not column:
+            raise ValueError("--field-column or --field is required for --csv-snapshots")
+        snapshots, coords = load_csv_snapshots(paths, column=column)
+        metadata: dict[str, object] = {
+            "source": "csv-snapshots",
+            "files": [str(path) for path in paths],
+            "field_column": column,
+        }
+        if coords is not None:
+            metadata["coord_shape"] = list(coords.shape)
+        return np.asarray(snapshots, dtype=np.float64), column, metadata
+
+    if input_path is None:
+        raise ValueError("--input or --csv-snapshots is required")
+
+    from naviertwin.core.cfd_reader import ReaderFactory
+
+    dataset = ReaderFactory.create_and_read(Path(input_path).expanduser())
+    selected_field = field or (dataset.field_names[0] if dataset.field_names else "")
+    if not selected_field:
+        raise ValueError("--field is required when the CFD input has no named fields")
+    snapshots = np.asarray(dataset.extract_field_snapshots(selected_field), dtype=np.float64)
+    metadata = {
+        "source": "cfd-reader",
+        "input": str(input_path),
+        "field": selected_field,
+        "n_points": int(dataset.n_points),
+        "n_cells": int(dataset.n_cells),
+        "n_time_steps": int(dataset.n_time_steps),
+    }
+    return snapshots, selected_field, metadata
+
+
+def _run_build_twin(
+    *,
+    input_path: str | None,
+    csv_snapshots: str | None,
+    field: str | None,
+    field_column: str | None,
+    params: str | None,
+    param_columns: str | None,
+    outdir: str,
+    reducer: str,
+    n_modes: int,
+    surrogate: str,
+    validation_count: int,
+    as_json: bool,
+) -> int:
+    """CFD/CSV dataset을 학습 가능한 디지털 트윈 산출물로 변환한다."""
+    try:
+        from naviertwin.core.digital_twin.manifest import build_manifest, save_manifest
+        from naviertwin.core.digital_twin.pipeline import NavierTwinPipeline
+        from naviertwin.core.digital_twin.pipeline_checkpoint import save_pipeline_state
+
+        snapshots, selected_field, source_meta = _load_build_twin_snapshots(
+            input_path=input_path,
+            csv_snapshots=csv_snapshots,
+            field=field,
+            field_column=field_column,
+        )
+        if snapshots.ndim != 2:
+            raise ValueError(f"snapshots must be 2D, got shape {snapshots.shape}")
+        n_features, n_snapshots = snapshots.shape
+        if n_snapshots < 4:
+            raise ValueError("build-twin requires at least 4 snapshots")
+        if n_modes < 1:
+            raise ValueError("n-modes must be positive")
+
+        params_array = _load_build_twin_params(
+            params_path=params,
+            param_columns=param_columns,
+            n_snapshots=n_snapshots,
+        )
+        val_count = min(max(1, validation_count), max(1, n_snapshots // 3))
+        train_count = n_snapshots - val_count
+        if train_count < 3:
+            raise ValueError("not enough training snapshots after validation split")
+
+        train_snapshots = snapshots[:, :train_count]
+        val_snapshots = snapshots[:, train_count:]
+        train_params = params_array[:train_count]
+        val_params = params_array[train_count:]
+
+        pipe = NavierTwinPipeline(
+            reducer_kind=reducer,
+            n_modes=n_modes,
+            surrogate_kind=surrogate,
+        )
+        pipe.load_snapshots(train_snapshots, field_name=selected_field)
+        pipe.reduce()
+        pipe.fit_surrogate(train_params)
+        y_true = pipe.state.reducer.encode(val_snapshots)
+        metrics = pipe.validate(val_params, y_true)
+
+        output_dir = Path(outdir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = output_dir / "metrics.json"
+        checkpoint_path = output_dir / "pipeline.h5"
+        manifest_path = output_dir / "manifest.json"
+        report_path = output_dir / "report.html"
+
+        save_pipeline_state(pipe, checkpoint_path)
+        pipe.export_report(str(report_path), project="NavierTwin Build Twin")
+
+        manifest = build_manifest(
+            reducer=reducer,
+            n_modes=n_modes,
+            surrogate=surrogate,
+            metrics=metrics,
+            extra={
+                "command": "build-twin",
+                "source": source_meta,
+                "field": selected_field,
+                "n_features": n_features,
+                "n_snapshots": n_snapshots,
+                "train_count": train_count,
+                "validation_count": val_count,
+                "param_dim": int(params_array.shape[1]),
+            },
+        )
+        save_manifest(manifest, manifest_path)
+
+        payload = {
+            "status": "ok",
+            "artifacts": {
+                "checkpoint": str(checkpoint_path),
+                "manifest": str(manifest_path),
+                "metrics": str(metrics_path),
+                "report": str(report_path),
+            },
+            "source": source_meta,
+            "field": selected_field,
+            "training": {
+                "reducer": reducer,
+                "n_modes": int(n_modes),
+                "surrogate": surrogate,
+                "n_features": int(n_features),
+                "n_snapshots": int(n_snapshots),
+                "train_count": int(train_count),
+                "validation_count": int(val_count),
+                "param_dim": int(params_array.shape[1]),
+            },
+            "metrics": metrics,
+        }
+        metrics_path.write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except (ImportError, RuntimeError, OSError, ValueError, KeyError) as exc:
+        print(f"build-twin error: {exc}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print(
+            "build-twin 완료: "
+            f"field={selected_field}, snapshots={n_snapshots}, "
+            f"rmse={metrics.get('rmse', float('nan')):.6g}"
+        )
+        print(f"artifacts: {output_dir}")
     return 0
 
 
