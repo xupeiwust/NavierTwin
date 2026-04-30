@@ -279,6 +279,8 @@ class TestCLISubcommands:
                 "2",
                 "--output",
                 str(tmp_path / "acceptance.json"),
+                "--summary-output",
+                str(tmp_path / "acceptance.md"),
                 "--json",
             ],
             capture_output=True,
@@ -301,6 +303,7 @@ class TestCLISubcommands:
         assert (tmp_path / "accepted-twin" / "engine.pkl").exists()
         assert (tmp_path / "accept-prediction.csv").exists()
         assert (tmp_path / "acceptance.json").exists()
+        assert (tmp_path / "acceptance.md").exists()
 
         verify_package_result = subprocess.run(
             [

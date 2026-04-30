@@ -176,7 +176,7 @@ accept-twin-package
 
 .. code-block:: bash
 
-   naviertwin accept-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-accepted --output /tmp/naviertwin-acceptance.json --json
+   naviertwin accept-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-accepted --output /tmp/naviertwin-acceptance.json --summary-output /tmp/naviertwin-acceptance.md --json
 
 Expected: runs the customer handoff acceptance smoke in one command. It verifies
 ``MANIFEST.json`` integrity, safely extracts the ZIP, inspects delivery
@@ -189,7 +189,9 @@ latency when thresholds are passed on the CLI. Package or prediction failures
 exit 1, SLO misses also exit 1, and runtime/setup errors exit 2. The JSON report
 contains ``verification``, ``inspection``, ``prediction``, ``benchmark``, and
 top-level ``acceptance`` blocks that can be attached to customer delivery
-records.
+records. ``--summary-output`` writes a Markdown checklist with the same verdict,
+prediction shape, effective SLO, latency statistics, and pass/fail rows for
+handoff reviews that do not require reading JSON.
 
 preflight
 ---------

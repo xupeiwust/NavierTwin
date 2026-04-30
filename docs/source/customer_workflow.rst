@@ -113,14 +113,16 @@ validation 포함 여부, README/delivery metadata 존재 여부와 ``parameter_
 
 .. code-block:: bash
 
-   naviertwin accept-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-accepted --output /tmp/naviertwin-acceptance.json --json
+   naviertwin accept-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-accepted --output /tmp/naviertwin-acceptance.json --summary-output /tmp/naviertwin-acceptance.md --json
 
 기대 결과: 고객이 받은 ZIP 하나로 무결성 검증, 안전 추출, delivery metadata
 조회, ``sample_params.csv`` 기반 샘플 예측, latency SLO 측정을 한 번에 수행합니다.
 ``delivery.json`` 의 ``latency_slo`` 가 기본 기준으로 적용되고, 필요하면
 ``--max-p95-ms`` 또는 ``--min-throughput-hz`` 같은 CLI threshold로 override할 수
 있습니다. 기준이 실패하면 종료 코드 1로 실패하므로 납품 승인 acceptance gate에
-바로 연결할 수 있습니다.
+바로 연결할 수 있습니다. ``--summary-output`` 을 지정하면 JSON을 열지 않아도
+통과/실패, 예측 shape, latency 통계, SLO check를 확인할 수 있는 Markdown
+수락 요약 리포트도 생성됩니다.
 
 GUI 대응 흐름
 -------------
@@ -137,4 +139,4 @@ GUI 대응 흐름
 - **트윈 패키지 정보 보기**: 고객 전달 ZIP 선택 → delivery metadata와 build metric 확인
 - **트윈 패키지 검증**: 고객 전달 ZIP 선택 → archive manifest 무결성 확인
 - **트윈 패키지 검증 후 추출**: 고객 전달 ZIP 선택 → 배포 디렉토리 선택 → 검증 성공 시 안전 추출
-- **트윈 패키지 원샷 수락 검사**: 고객 전달 ZIP 선택 → 추출 디렉토리/SLO 입력 → 검증, 샘플 예측, latency gate, acceptance JSON 저장
+- **트윈 패키지 원샷 수락 검사**: 고객 전달 ZIP 선택 → 추출 디렉토리/SLO 입력 → 검증, 샘플 예측, latency gate, acceptance JSON/Markdown 저장

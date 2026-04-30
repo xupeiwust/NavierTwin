@@ -298,6 +298,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="무결성/샘플 예측만 수행하고 latency 측정은 생략",
     )
     p_accept_package.add_argument("--output", default=None, help="acceptance JSON 리포트 저장 경로")
+    p_accept_package.add_argument(
+        "--summary-output",
+        default=None,
+        help="사람이 읽는 acceptance Markdown 요약 리포트 저장 경로",
+    )
     p_accept_package.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
 
     # preflight
@@ -546,6 +551,7 @@ def main() -> None:
                 min_throughput_hz=args.min_throughput_hz,
                 skip_benchmark=args.skip_benchmark,
                 output=args.output,
+                summary_output=args.summary_output,
                 as_json=args.as_json,
             )
         )
@@ -1799,7 +1805,7 @@ def _build_twin_delivery_entries(
         "naviertwin accept-twin-package --package naviertwin-twin.zip",
         "--extract-to ./naviertwin-twin",
         latency_slo_args,
-        "--output acceptance.json --json",
+        "--output acceptance.json --summary-output acceptance.md --json",
     )
     sample_params_csv = _sample_params_csv_from_contract(parameter_contract)
     generated_entries = ["README.txt", "delivery.json"]
@@ -2220,6 +2226,7 @@ def _run_accept_twin_package(
     min_throughput_hz: float | None = None,
     skip_benchmark: bool,
     output: str | None,
+    summary_output: str | None,
     as_json: bool,
 ) -> int:
     """고객 전달 ZIP을 수락 가능한 디지털 트윈 패키지인지 원샷 점검한다."""
@@ -2263,6 +2270,14 @@ def _run_accept_twin_package(
                     skip_benchmark=skip_benchmark,
                 )
 
+        summary_output_path = Path(summary_output).expanduser() if summary_output else None
+        if summary_output_path is not None:
+            payload["summary_output"] = str(summary_output_path)
+            summary_output_path.parent.mkdir(parents=True, exist_ok=True)
+            summary_output_path.write_text(
+                _format_accept_twin_package_summary(payload),
+                encoding="utf-8",
+            )
         output_path = Path(output).expanduser() if output else None
         if output_path is not None:
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2290,7 +2305,115 @@ def _run_accept_twin_package(
             )
         if output_path is not None:
             print(f"output: {output_path}")
+        if summary_output_path is not None:
+            print(f"summary_output: {summary_output_path}")
     return 0 if payload["status"] == "ok" else 1
+
+
+def _format_accept_twin_package_summary(payload: dict[str, Any]) -> str:
+    """accept-twin-package 결과를 고객 검수용 Markdown으로 요약한다."""
+    acceptance = payload.get("acceptance", {})
+    prediction = payload.get("prediction") or {}
+    benchmark = payload.get("benchmark") or {}
+    latency = benchmark.get("latency_ms") if isinstance(benchmark, dict) else {}
+    latency = latency if isinstance(latency, dict) else {}
+    throughput_hz = benchmark.get("throughput_hz") if isinstance(benchmark, dict) else None
+    benchmark_acceptance = benchmark.get("acceptance", {}) if isinstance(benchmark, dict) else {}
+    checks = benchmark_acceptance.get("checks", []) if isinstance(benchmark_acceptance, dict) else []
+    parameter_input = payload.get("parameter_input") or {}
+    latency_slo = payload.get("latency_slo") or {}
+    effective_slo = latency_slo.get("effective", {}) if isinstance(latency_slo, dict) else {}
+
+    lines = [
+        "# NavierTwin Package Acceptance Summary",
+        "",
+        f"- Status: {_summary_status(payload.get('status') == 'ok')}",
+        f"- Package: {payload.get('package', '-')}",
+        f"- Extracted to: {payload.get('extracted_to', '-')}",
+        f"- Summary report: {payload.get('summary_output', '-')}",
+        "",
+        "## Gate Results",
+        "",
+        "| Gate | Result |",
+        "| --- | --- |",
+        f"| Package integrity and metadata | {_summary_status(_bool_from_mapping(acceptance, 'package'))} |",
+        f"| Sample prediction | {_summary_status(_bool_from_mapping(acceptance, 'prediction'))} |",
+        f"| Latency benchmark | {_summary_status(_bool_from_mapping(acceptance, 'benchmark'))} |",
+        "",
+        "## Prediction",
+        "",
+        f"- Parameter source: {parameter_input.get('source', '-')}",
+        f"- Input shape: {prediction.get('input_shape', '-')}",
+        f"- Prediction shape: {prediction.get('prediction_shape', '-')}",
+    ]
+    if prediction.get("output"):
+        lines.append(f"- Prediction output: {prediction.get('output')}")
+
+    lines.extend(
+        [
+            "",
+            "## Latency",
+            "",
+            f"- Warmup: {benchmark.get('warmup', '-') if isinstance(benchmark, dict) else '-'}",
+            f"- Repeat: {benchmark.get('repeat', '-') if isinstance(benchmark, dict) else '-'}",
+            f"- p50 ms: {_summary_float(latency.get('p50'))}",
+            f"- p95 ms: {_summary_float(latency.get('p95'))}",
+            f"- p99 ms: {_summary_float(latency.get('p99'))}",
+            f"- Throughput Hz: {_summary_float(throughput_hz)}",
+            "",
+            "## Effective SLO",
+            "",
+            "| Metric | Threshold |",
+            "| --- | --- |",
+        ]
+    )
+    for key in ("max_mean_ms", "max_p50_ms", "max_p95_ms", "max_p99_ms", "min_throughput_hz"):
+        value = effective_slo.get(key) if isinstance(effective_slo, dict) else None
+        lines.append(f"| {key} | {_summary_float(value)} |")
+
+    lines.extend(["", "## SLO Checks", "", "| Metric | Rule | Threshold | Value | Result |", "| --- | --- | --- | --- | --- |"])
+    if checks:
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            lines.append(
+                "| {metric} | {op} | {threshold} | {value} | {result} |".format(
+                    metric=check.get("metric", "-"),
+                    op=check.get("op", "-"),
+                    threshold=_summary_float(check.get("threshold")),
+                    value=_summary_float(check.get("value")),
+                    result=_summary_status(bool(check.get("passed"))),
+                )
+            )
+    else:
+        lines.append("| - | - | - | - | No latency SLO configured |")
+
+    errors = payload.get("verification", {}).get("errors", [])
+    if isinstance(errors, list) and errors:
+        lines.extend(["", "## Verification Errors", ""])
+        lines.extend(f"- {error}" for error in errors)
+
+    return "\n".join(lines) + "\n"
+
+
+def _bool_from_mapping(mapping: Any, key: str) -> bool:
+    """summary helper: dict-like 값에서 bool을 안전하게 읽는다."""
+    return bool(mapping.get(key)) if isinstance(mapping, dict) else False
+
+
+def _summary_status(passed: bool) -> str:
+    """Markdown summary의 pass/fail 문자열을 통일한다."""
+    return "PASS" if passed else "FAIL"
+
+
+def _summary_float(value: Any) -> str:
+    """Markdown summary에 넣을 float 값을 compact하게 표시한다."""
+    if value is None:
+        return "-"
+    try:
+        return f"{float(value):.6g}"
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _accept_twin_package_archive(

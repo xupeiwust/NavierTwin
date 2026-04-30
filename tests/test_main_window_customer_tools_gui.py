@@ -953,14 +953,16 @@ def test_accept_twin_package_path_runs_cli_and_surfaces_result(
 
     win = MainWindow(confirm_on_close=False)
     qtbot.addWidget(win)
-    calls: list[tuple[Path, Path, int, int, float | None, float | None, Path | None]] = []
+    calls: list[
+        tuple[Path, Path, int, int, float | None, float | None, Path | None, Path | None]
+    ] = []
     messages: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
         win,
         "_run_accept_twin_package_cli",
         lambda package_path, *, extract_to, warmup, repeat, max_p95_ms,
-        min_throughput_hz, output: (
+        min_throughput_hz, output, summary_output: (
             calls.append(
                 (
                     package_path,
@@ -970,6 +972,7 @@ def test_accept_twin_package_path_runs_cli_and_surfaces_result(
                     max_p95_ms,
                     min_throughput_hz,
                     output,
+                    summary_output,
                 )
             )
             or 0
@@ -984,6 +987,7 @@ def test_accept_twin_package_path_runs_cli_and_surfaces_result(
     package_path = tmp_path / "delivery.zip"
     extract_to = tmp_path / "accepted"
     output = tmp_path / "acceptance.json"
+    summary_output = tmp_path / "acceptance.md"
     win._accept_twin_package_path(
         package_path,
         extract_to=extract_to,
@@ -992,13 +996,15 @@ def test_accept_twin_package_path_runs_cli_and_surfaces_result(
         max_p95_ms=100.0,
         min_throughput_hz=10.0,
         output=output,
+        summary_output=summary_output,
     )
 
-    assert calls == [(package_path, extract_to, 1, 3, 100.0, 10.0, output)]
+    assert calls == [(package_path, extract_to, 1, 3, 100.0, 10.0, output, summary_output)]
     assert messages
     assert messages[0][0] == "트윈 패키지 수락 검사 완료"
     assert str(extract_to) in messages[0][1]
     assert str(output) in messages[0][1]
+    assert str(summary_output) in messages[0][1]
     assert win._status_label.text() == "트윈 패키지 수락 검사 완료"
 
 
@@ -1044,7 +1050,7 @@ def test_accept_twin_package_dialog_defers_to_package_slo_by_default(
     win = MainWindow(confirm_on_close=False)
     qtbot.addWidget(win)
     dialogs: list[tuple[str, str]] = []
-    calls: list[tuple[int, int, float | None, float | None, Path | None]] = []
+    calls: list[tuple[int, int, float | None, float | None, Path | None, Path | None]] = []
 
     monkeypatch.setattr(
         QFileDialog,
@@ -1075,8 +1081,8 @@ def test_accept_twin_package_dialog_defers_to_package_slo_by_default(
         win,
         "_accept_twin_package_path",
         lambda package_path, *, extract_to, warmup, repeat, max_p95_ms,
-        min_throughput_hz, output: calls.append(
-            (warmup, repeat, max_p95_ms, min_throughput_hz, output)
+        min_throughput_hz, output, summary_output: calls.append(
+            (warmup, repeat, max_p95_ms, min_throughput_hz, output, summary_output)
         ),
     )
 
@@ -1084,7 +1090,9 @@ def test_accept_twin_package_dialog_defers_to_package_slo_by_default(
 
     assert ("수락 검사 반복", "2,20") in dialogs
     assert ("수락 검사 SLO", "") in dialogs
-    assert calls == [(1, 3, None, None, tmp_path / "acceptance.json")]
+    assert calls == [
+        (1, 3, None, None, tmp_path / "acceptance.json", tmp_path / "acceptance.md")
+    ]
 
 
 def test_api_server_start_uses_qprocess(qtbot, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -301,6 +301,8 @@ class TestBuildParser:
                 "10",
                 "--output",
                 str(tmp_path / "acceptance.json"),
+                "--summary-output",
+                str(tmp_path / "acceptance.md"),
                 "--json",
             ]
         )
@@ -313,6 +315,7 @@ class TestBuildParser:
         assert args.max_p95_ms == 100
         assert args.min_throughput_hz == 10
         assert args.output.endswith("acceptance.json")
+        assert args.summary_output.endswith("acceptance.md")
         assert args.as_json is True
 
     def test_parse_autorefine_subcommand(self) -> None:
@@ -644,6 +647,7 @@ class TestRunBuildTwin:
         assert "--param-columns normalized_index" in delivery["commands"]["benchmark"]
         assert "--min-throughput-hz" in delivery["commands"]["benchmark"]
         assert "--min-throughput-hz 10" in delivery["commands"]["accept_package"]
+        assert "--summary-output acceptance.md" in delivery["commands"]["accept_package"]
         assert delivery["latency_slo"]["thresholds"]["max_p95_ms"] == 100.0
         assert delivery["latency_slo"]["thresholds"]["min_throughput_hz"] == 10.0
         assert sample_params == "normalized_index\n0.5\n"
@@ -695,6 +699,7 @@ class TestRunBuildTwin:
             min_throughput_hz=None,
             skip_benchmark=False,
             output=None,
+            summary_output=None,
             as_json=True,
         )
         policy_accept_payload = json.loads(capsys.readouterr().out)
@@ -718,6 +723,7 @@ class TestRunBuildTwin:
             min_throughput_hz=0.0001,
             skip_benchmark=False,
             output=str(tmp_path / "acceptance.json"),
+            summary_output=str(tmp_path / "acceptance.md"),
             as_json=True,
         )
         accept_payload = json.loads(capsys.readouterr().out)
@@ -740,6 +746,10 @@ class TestRunBuildTwin:
         assert (tmp_path / "accepted-twin" / "engine.pkl").exists()
         assert (tmp_path / "accept-prediction.csv").exists()
         assert (tmp_path / "acceptance.json").exists()
+        acceptance_summary = (tmp_path / "acceptance.md").read_text(encoding="utf-8")
+        assert "# NavierTwin Package Acceptance Summary" in acceptance_summary
+        assert "| Latency benchmark | PASS |" in acceptance_summary
+        assert "max_p95_ms" in acceptance_summary
 
         gated_accept_code = _run_accept_twin_package(
             package_path=str(tmp_path / "twin-delivery.zip"),
@@ -754,6 +764,7 @@ class TestRunBuildTwin:
             min_throughput_hz=None,
             skip_benchmark=False,
             output=None,
+            summary_output=None,
             as_json=True,
         )
         gated_accept_payload = json.loads(capsys.readouterr().out)
@@ -790,6 +801,7 @@ class TestRunBuildTwin:
             min_throughput_hz=None,
             skip_benchmark=False,
             output=None,
+            summary_output=None,
             as_json=True,
         )
         no_slo_accept_payload = json.loads(capsys.readouterr().out)

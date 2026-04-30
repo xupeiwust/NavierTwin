@@ -1788,6 +1788,7 @@ class MainWindow(QMainWindow):
             max_p95_ms=max_p95_ms,
             min_throughput_hz=min_throughput_hz,
             output=Path(output) if output else None,
+            summary_output=Path(output).with_suffix(".md") if output else None,
         )
 
     def _accept_twin_package_path(
@@ -1800,6 +1801,7 @@ class MainWindow(QMainWindow):
         max_p95_ms: float | None = None,
         min_throughput_hz: float | None = None,
         output: Path | None,
+        summary_output: Path | None = None,
     ) -> None:
         """GUI에서 accept-twin-package CLI 워크플로우를 실행한다."""
         try:
@@ -1811,6 +1813,7 @@ class MainWindow(QMainWindow):
                 max_p95_ms=max_p95_ms,
                 min_throughput_hz=min_throughput_hz,
                 output=output,
+                summary_output=summary_output,
             )
         except Exception as exc:  # noqa: BLE001
             self._set_status("트윈 패키지 수락 검사 실패")
@@ -1826,7 +1829,11 @@ class MainWindow(QMainWindow):
             return
 
         self._set_status("트윈 패키지 수락 검사 완료")
-        suffix = f"\n리포트 저장 위치: {output}" if output is not None else ""
+        suffix = ""
+        if output is not None:
+            suffix += f"\nJSON 저장 위치: {output}"
+        if summary_output is not None:
+            suffix += f"\nMarkdown 요약 위치: {summary_output}"
         QMessageBox.information(
             self,
             "트윈 패키지 수락 검사 완료",
@@ -1847,6 +1854,7 @@ class MainWindow(QMainWindow):
         max_p95_ms: float | None = None,
         min_throughput_hz: float | None = None,
         output: Path | None,
+        summary_output: Path | None = None,
     ) -> int:
         """테스트에서 대체 가능한 accept-twin-package 실행 래퍼."""
         from naviertwin.main import _run_accept_twin_package
@@ -1864,6 +1872,7 @@ class MainWindow(QMainWindow):
             min_throughput_hz=min_throughput_hz,
             skip_benchmark=False,
             output=str(output) if output is not None else None,
+            summary_output=str(summary_output) if summary_output is not None else None,
             as_json=False,
         )
 
