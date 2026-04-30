@@ -18,6 +18,7 @@ EXPECTED_SUBCOMMANDS = [
     "validate-twin",
     "package-twin",
     "verify-twin-package",
+    "inspect-twin-package",
     "preflight",
     "support-bundle",
     "autorefine",
@@ -223,6 +224,28 @@ class TestCLISubcommands:
         manifest_names = {entry["name"] for entry in package_payload["manifest_entries"]}
         assert {"README.txt", "delivery.json"} <= manifest_names
         assert (tmp_path / "twin-delivery.zip").exists()
+
+        inspect_package_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "naviertwin.main",
+                "inspect-twin-package",
+                "--package",
+                str(tmp_path / "twin-delivery.zip"),
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert inspect_package_result.returncode == 0, inspect_package_result.stderr
+
+        inspect_payload = json.loads(inspect_package_result.stdout)
+        assert inspect_payload["status"] == "ok"
+        assert inspect_payload["delivery_metadata_present"] is True
+        assert inspect_payload["format"] == "NavierTwin delivery package"
+        assert inspect_payload["verification"]["status"] == "ok"
 
         verify_package_result = subprocess.run(
             [

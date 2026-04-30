@@ -186,6 +186,22 @@ class TestBuildParser:
         assert args.extract_to.endswith("deploy")
         assert args.as_json is True
 
+    def test_parse_inspect_twin_package_subcommand(self, tmp_path) -> None:
+        from naviertwin.main import _build_parser
+
+        p = _build_parser()
+        args = p.parse_args(
+            [
+                "inspect-twin-package",
+                "--package",
+                str(tmp_path / "twin.zip"),
+                "--json",
+            ]
+        )
+        assert args.command == "inspect-twin-package"
+        assert args.package.endswith("twin.zip")
+        assert args.as_json is True
+
     def test_parse_autorefine_subcommand(self) -> None:
         from naviertwin.main import _build_parser
 
@@ -301,6 +317,7 @@ class TestRunBuildTwin:
         pytest.importorskip("sklearn")
         from naviertwin.main import (
             _run_build_twin,
+            _run_inspect_twin_package,
             _run_package_twin,
             _run_predict_twin,
             _run_validate_twin,
@@ -437,6 +454,21 @@ class TestRunBuildTwin:
         assert "verify-twin-package" in readme
         assert delivery["format"] == "NavierTwin delivery package"
         assert delivery["commands"]["predict"].startswith("naviertwin predict-twin")
+
+        inspect_code = _run_inspect_twin_package(
+            package_path=str(tmp_path / "twin-delivery.zip"),
+            as_json=True,
+        )
+        inspect_payload = json.loads(capsys.readouterr().out)
+
+        assert inspect_code == 0
+        assert inspect_payload["status"] == "ok"
+        assert inspect_payload["format"] == "NavierTwin delivery package"
+        assert inspect_payload["delivery_metadata_present"] is True
+        assert inspect_payload["validation_included"] is True
+        assert inspect_payload["readme_present"] is True
+        assert inspect_payload["verification"]["status"] == "ok"
+        assert "rmse" in inspect_payload["metrics"]
 
         verify_code = _run_verify_twin_package(
             package_path=str(tmp_path / "twin-delivery.zip"),

@@ -115,6 +115,18 @@ contains bytes and SHA256 hashes for every archived entry. Before packaging,
 ``manifest.json`` integrity records are checked against the current files so
 tampered build artifacts fail fast.
 
+inspect-twin-package
+--------------------
+
+.. code-block:: bash
+
+   naviertwin inspect-twin-package --package /tmp/naviertwin-twin.zip --json
+
+Expected: reads the delivery ZIP without extracting it, verifies archive
+integrity, and reports ``delivery.json`` metadata such as package format,
+build metrics, packaged files, generated entries, available commands, and
+whether validation data/README are present.
+
 verify-twin-package
 -------------------
 

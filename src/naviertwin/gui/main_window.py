@@ -303,6 +303,10 @@ class MainWindow(QMainWindow):
         package_twin_action.triggered.connect(self._package_twin_artifacts)
         self._tools_menu.addAction(package_twin_action)
 
+        inspect_twin_package_action = QAction("트윈 패키지 정보 보기(&I)", self)
+        inspect_twin_package_action.triggered.connect(self._inspect_twin_package)
+        self._tools_menu.addAction(inspect_twin_package_action)
+
         verify_twin_package_action = QAction("트윈 패키지 검증(&Y)", self)
         verify_twin_package_action.triggered.connect(self._verify_twin_package)
         self._tools_menu.addAction(verify_twin_package_action)
@@ -1147,6 +1151,55 @@ class MainWindow(QMainWindow):
         )
         if package_path:
             self._verify_twin_package_path(Path(package_path))
+
+    def _inspect_twin_package(self) -> None:
+        """고객 전달용 트윈 ZIP의 구성과 메타데이터를 조회한다."""
+        package_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "트윈 ZIP 선택",
+            "",
+            "ZIP (*.zip)",
+        )
+        if package_path:
+            self._inspect_twin_package_path(Path(package_path))
+
+    def _inspect_twin_package_path(self, package_path: Path) -> None:
+        """GUI에서 inspect-twin-package 조회 결과를 요약 표시한다."""
+        try:
+            payload = self._run_inspect_twin_package_cli(package_path)
+        except Exception as exc:  # noqa: BLE001
+            self._set_status("트윈 패키지 정보 조회 실패")
+            QMessageBox.warning(self, "트윈 패키지 정보 조회 실패", str(exc))
+            return
+        if payload.get("status") != "ok":
+            self._set_status("트윈 패키지 정보 조회 실패")
+            errors = payload.get("errors") or []
+            error_text = "; ".join(map(str, errors)) if errors else "status != ok"
+            QMessageBox.warning(self, "트윈 패키지 정보 조회 실패", error_text)
+            return
+
+        metrics = payload.get("metrics") or {}
+        rmse = metrics.get("rmse", "-") if isinstance(metrics, dict) else "-"
+        r2 = metrics.get("r2", "-") if isinstance(metrics, dict) else "-"
+        self._set_status("트윈 패키지 정보 조회 완료")
+        QMessageBox.information(
+            self,
+            "트윈 패키지 정보 조회 완료",
+            (
+                f"패키지: {package_path}\n"
+                f"형식: {payload.get('format') or '-'}\n"
+                f"엔트리 수: {payload.get('manifest_entry_count')}\n"
+                f"validation 포함: {payload.get('validation_included')}\n"
+                f"RMSE: {rmse}\n"
+                f"R²: {r2}"
+            ),
+        )
+
+    def _run_inspect_twin_package_cli(self, package_path: Path) -> dict[str, object]:
+        """테스트에서 대체 가능한 inspect-twin-package 실행 래퍼."""
+        from naviertwin.main import _inspect_twin_package_archive
+
+        return _inspect_twin_package_archive(package_path)
 
     def _verify_and_extract_twin_package(self) -> None:
         """고객 전달용 트윈 ZIP을 검증한 뒤 선택한 디렉토리에 추출한다."""

@@ -192,6 +192,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_verify_package.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
 
+    # inspect-twin-package
+    p_inspect_package = sub.add_parser(
+        "inspect-twin-package",
+        help="고객 전달용 트윈 ZIP 구성과 delivery metadata 조회",
+    )
+    p_inspect_package.add_argument("--package", required=True, help="조회할 package-twin ZIP 경로")
+    p_inspect_package.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
+
     # preflight
     p_preflight = sub.add_parser("preflight", help="CFD 입력 데이터 readiness 점검")
     p_preflight.add_argument("path", help="점검할 CFD 파일 또는 케이스 디렉토리")
@@ -394,6 +402,8 @@ def main() -> None:
                 as_json=args.as_json,
             )
         )
+    elif args.command == "inspect-twin-package":
+        sys.exit(_run_inspect_twin_package(package_path=args.package, as_json=args.as_json))
     elif args.command == "preflight":
         sys.exit(_run_preflight(path=args.path, as_json=args.as_json, output=args.output))
     elif args.command == "support-bundle":
@@ -1429,6 +1439,32 @@ def _run_verify_twin_package(
     return 0 if payload["status"] == "ok" else 1
 
 
+def _run_inspect_twin_package(*, package_path: str, as_json: bool) -> int:
+    """package-twin ZIP의 구성/메타데이터를 읽기 전용으로 조회한다."""
+    try:
+        payload = _inspect_twin_package_archive(Path(package_path).expanduser())
+    except (OSError, RuntimeError, ValueError, KeyError) as exc:
+        print(f"inspect-twin-package error: {exc}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print(
+            "inspect-twin-package 완료: "
+            f"status={payload['status']}, entries={payload['manifest_entry_count']}, "
+            f"format={payload.get('format') or '-'}"
+        )
+        metrics = payload.get("metrics") or {}
+        if isinstance(metrics, dict) and metrics:
+            rmse = metrics.get("rmse", "-")
+            r2 = metrics.get("r2", "-")
+            print(f"metrics: rmse={rmse}, r2={r2}")
+        if payload["errors"]:
+            print("errors: " + "; ".join(payload["errors"]))
+    return 0 if payload["status"] == "ok" else 1
+
+
 def _is_safe_zip_member_name(name: str) -> bool:
     """ZIP member 이름이 대상 디렉토리 밖을 가리키지 않는지 검사한다."""
     from pathlib import PurePosixPath
@@ -1560,6 +1596,62 @@ def _verify_twin_package_archive(
         payload["extracted_entries"] = (
             _extract_verified_twin_package(package_path, extract_to) if passed else []
         )
+    return payload
+
+
+def _inspect_twin_package_archive(package_path: Path) -> dict[str, Any]:
+    """트윈 전달 ZIP의 검증 상태와 delivery metadata를 요약한다."""
+    import zipfile
+
+    verification = _verify_twin_package_archive(package_path)
+    errors = list(verification.get("errors", []))
+    with zipfile.ZipFile(package_path) as archive:
+        names = set(archive.namelist())
+        if "MANIFEST.json" in names:
+            manifest_entries = json.loads(archive.read("MANIFEST.json").decode("utf-8"))
+            if not isinstance(manifest_entries, list):
+                manifest_entries = []
+        else:
+            manifest_entries = []
+
+        delivery: dict[str, Any] | None = None
+        if "delivery.json" in names:
+            try:
+                delivery_raw = json.loads(archive.read("delivery.json").decode("utf-8"))
+            except json.JSONDecodeError as exc:
+                errors.append(f"invalid delivery.json: {exc.msg}")
+            else:
+                if isinstance(delivery_raw, dict):
+                    delivery = delivery_raw
+                else:
+                    errors.append("delivery.json must contain an object")
+
+    build_manifest = delivery.get("build_manifest", {}) if delivery else {}
+    if not isinstance(build_manifest, dict):
+        build_manifest = {}
+    metrics = build_manifest.get("metrics", {})
+    config = build_manifest.get("config", {})
+    commands = delivery.get("commands", {}) if delivery else {}
+    files = delivery.get("files", []) if delivery else []
+    generated_entries = delivery.get("generated_entries", []) if delivery else []
+    payload = {
+        "status": "ok" if verification.get("status") == "ok" and not errors else "failed",
+        "package": str(package_path),
+        "format": delivery.get("format") if delivery else None,
+        "schema": delivery.get("schema") if delivery else None,
+        "delivery_metadata_present": delivery is not None,
+        "manifest_entry_count": len(manifest_entries) or verification.get("manifest_entry_count", 0),
+        "entries": manifest_entries,
+        "files": files if isinstance(files, list) else [],
+        "generated_entries": generated_entries if isinstance(generated_entries, list) else [],
+        "commands": commands if isinstance(commands, dict) else {},
+        "metrics": metrics if isinstance(metrics, dict) else {},
+        "config": config if isinstance(config, dict) else {},
+        "validation_included": "validation.json" in names,
+        "readme_present": "README.txt" in names,
+        "verification": verification,
+        "errors": errors,
+    }
     return payload
 
 
