@@ -39,6 +39,10 @@ def _file_integrity(path: Path) -> dict[str, Any]:
     }
 
 
+def _write_text(path: Path, text: str) -> None:
+    path.write_text(redact(text), encoding="utf-8")
+
+
 def report_to_json(report: dict[str, Any]) -> str:
     """Serialize support bundle metadata to stable JSON."""
     return json.dumps(report, ensure_ascii=False, sort_keys=True)
@@ -50,6 +54,59 @@ def _final_status(statuses: list[str]) -> str:
     if "warn" in statuses:
         return "warn"
     return "ok"
+
+
+def _support_bundle_readme(metadata: dict[str, Any]) -> str:
+    files = metadata.get("files", [])
+    inputs = metadata.get("inputs", {})
+    artifacts = metadata.get("artifacts", {})
+    warnings = metadata.get("warnings", [])
+    errors = metadata.get("errors", [])
+
+    lines = [
+        "# NavierTwin Support Bundle",
+        "",
+        f"- Status: {metadata.get('status', 'unknown')}",
+        f"- Generated at: {metadata.get('generated_at', 'unknown')}",
+        f"- NavierTwin version: {metadata.get('version', 'unknown')}",
+        "",
+        "## Start Here",
+        "",
+        "1. Check `README.txt` for this summary.",
+        "2. Open `acceptance.md` first when present; it is the human-readable handoff verdict.",
+        "3. Open `metadata.json` for the full file list and integrity hashes.",
+        "4. Open `doctor.json` and `preflight.json` when runtime or CFD-readiness issues are suspected.",
+        "",
+        "## Files",
+        "",
+    ]
+    if isinstance(files, list):
+        for name in files:
+            if not isinstance(name, str):
+                continue
+            artifact = artifacts.get(name) if isinstance(artifacts, dict) else None
+            suffix = ""
+            if isinstance(artifact, dict):
+                suffix = f" ({artifact.get('bytes', '?')} bytes)"
+            lines.append(f"- `{name}`{suffix}")
+    lines.extend(["", "## Inputs", ""])
+    if isinstance(inputs, dict):
+        for key in sorted(inputs):
+            value = inputs[key]
+            status = "not provided" if value is None else "provided"
+            lines.append(f"- `{key}`: {status}")
+    lines.extend(["", "## Warnings", ""])
+    if isinstance(warnings, list) and warnings:
+        lines.extend(f"- {item}" for item in warnings)
+    else:
+        lines.append("- None")
+    lines.extend(["", "## Errors", ""])
+    if isinstance(errors, list) and errors:
+        lines.extend(f"- {item}" for item in errors)
+    else:
+        lines.append("- None")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def build_support_bundle(
@@ -132,7 +189,7 @@ def build_support_bundle(
         written_files.append(acceptance_summary_path.name)
         artifacts[acceptance_summary_path.name] = _file_integrity(acceptance_summary_path)
 
-    files = [*written_files, "metadata.json"]
+    files = [*written_files, "README.txt", "metadata.json"]
     metadata: dict[str, Any] = {
         "status": _final_status(statuses),
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -157,6 +214,13 @@ def build_support_bundle(
         zip_path = output_dir / "support-bundle.zip"
         metadata["zip_path"] = str(zip_path)
     metadata = redact_object(metadata)
+
+    readme_path = output_dir / "README.txt"
+    _write_text(readme_path, _support_bundle_readme(metadata))
+    readme_artifacts = metadata.get("artifacts")
+    if not isinstance(readme_artifacts, dict):
+        raise RuntimeError("support bundle metadata artifacts must be a mapping")
+    readme_artifacts[readme_path.name] = _file_integrity(readme_path)
 
     metadata_path = output_dir / "metadata.json"
     _write_json(metadata_path, metadata)

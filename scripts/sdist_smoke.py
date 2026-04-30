@@ -438,7 +438,7 @@ def _install_and_run_cli(artifact: Path, venv_dir: Path) -> None:
     _assert_support_bundle_outputs(
         payload=support_payload,
         support_dir=support_dir,
-        expected_files=["doctor.json", "metadata.json"],
+        expected_files=["doctor.json", "README.txt", "metadata.json"],
     )
 
     preflight_fixture = _repo_root() / "tests" / "fixtures" / "tiny_square.su2"
@@ -465,7 +465,7 @@ def _install_and_run_cli(artifact: Path, venv_dir: Path) -> None:
     _assert_support_bundle_outputs(
         payload=support_preflight_payload,
         support_dir=support_preflight_dir,
-        expected_files=["doctor.json", "preflight.json", "metadata.json"],
+        expected_files=["doctor.json", "preflight.json", "README.txt", "metadata.json"],
         allowed_statuses={"ok", "warn", "error"},
     )
 
@@ -514,6 +514,7 @@ def _install_and_run_cli(artifact: Path, venv_dir: Path) -> None:
         "preflight.json",
         "acceptance.json",
         "acceptance.md",
+        "README.txt",
         "metadata.json",
     ]
     _assert_support_bundle_outputs(

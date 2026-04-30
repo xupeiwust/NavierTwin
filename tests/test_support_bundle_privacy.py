@@ -77,11 +77,13 @@ def test_support_bundle_redacts_sensitive_values(tmp_path, monkeypatch) -> None:
     preflight_text = (outdir / "preflight.json").read_text(encoding="utf-8")
     acceptance_json_text = (outdir / "acceptance.json").read_text(encoding="utf-8")
     acceptance_md_text = (outdir / "acceptance.md").read_text(encoding="utf-8")
+    readme_text = (outdir / "README.txt").read_text(encoding="utf-8")
     metadata_text = (outdir / "metadata.json").read_text(encoding="utf-8")
     _assert_secret_absent(doctor_text)
     _assert_secret_absent(preflight_text)
     _assert_secret_absent(acceptance_json_text)
     _assert_secret_absent(acceptance_md_text)
+    _assert_secret_absent(readme_text)
     _assert_secret_absent(metadata_text)
 
     assert "TOKEN=***REDACTED***" in doctor_text
@@ -95,6 +97,7 @@ def test_support_bundle_redacts_sensitive_values(tmp_path, monkeypatch) -> None:
             "preflight.json",
             "acceptance.json",
             "acceptance.md",
+            "README.txt",
             "metadata.json",
         ):
             text = zf.read(name).decode("utf-8")

@@ -123,11 +123,18 @@ def test_build_support_bundle_writes_doctor_and_metadata(
     assert metadata["status"] == "ok"
     assert metadata["version"]
     assert metadata["generated_at"]
-    assert metadata["files"] == ["doctor.json", "metadata.json"]
+    assert metadata["files"] == ["doctor.json", "README.txt", "metadata.json"]
     assert metadata["artifacts"]["doctor.json"] == {
         "bytes": (outdir / "doctor.json").stat().st_size,
         "sha256": _file_sha256(outdir / "doctor.json"),
     }
+    assert metadata["artifacts"]["README.txt"] == {
+        "bytes": (outdir / "README.txt").stat().st_size,
+        "sha256": _file_sha256(outdir / "README.txt"),
+    }
+    assert "# NavierTwin Support Bundle" in (outdir / "README.txt").read_text(
+        encoding="utf-8"
+    )
     assert metadata["inputs"] == {
         "preflight": None,
         "include_optional": True,
@@ -155,8 +162,8 @@ def test_build_support_bundle_writes_preflight_report_when_available(tmp_path) -
     assert preflight_payload["status"] == "ok"
     assert preflight_payload["summary"]["n_points"] == 4
     assert metadata == metadata_payload
-    assert metadata["files"] == ["doctor.json", "preflight.json", "metadata.json"]
-    assert set(metadata["artifacts"]) == {"doctor.json", "preflight.json"}
+    assert metadata["files"] == ["doctor.json", "preflight.json", "README.txt", "metadata.json"]
+    assert set(metadata["artifacts"]) == {"doctor.json", "preflight.json", "README.txt"}
     assert metadata["inputs"]["preflight"] == str(fixture)
 
 
@@ -187,7 +194,11 @@ def test_build_support_bundle_records_integrity_manifest(
         "doctor.json": {
             "bytes": (outdir / "doctor.json").stat().st_size,
             "sha256": _file_sha256(outdir / "doctor.json"),
-        }
+        },
+        "README.txt": {
+            "bytes": (outdir / "README.txt").stat().st_size,
+            "sha256": _file_sha256(outdir / "README.txt"),
+        },
     }
     assert json.loads((outdir / "metadata.json").read_text(encoding="utf-8")) == metadata
 
@@ -220,11 +231,11 @@ def test_build_support_bundle_zip_writes_archive_and_manifest(
 
     with zipfile.ZipFile(zip_path) as zf:
         names = set(zf.namelist())
-    assert {"doctor.json", "metadata.json", "MANIFEST.json"}.issubset(names)
+    assert {"doctor.json", "README.txt", "metadata.json", "MANIFEST.json"}.issubset(names)
 
     manifest = read_manifest(zip_path)
     manifest_map = {str(entry["name"]): entry for entry in manifest}
-    for artifact in ["doctor.json", "metadata.json"]:
+    for artifact in ["doctor.json", "README.txt", "metadata.json"]:
         data = (outdir / artifact).read_bytes()
         assert manifest_map[artifact]["bytes"] == len(data)
         assert manifest_map[artifact]["sha256"] == sha256(data).hexdigest()
@@ -277,12 +288,22 @@ def test_build_support_bundle_includes_acceptance_artifacts(
         "doctor.json",
         "acceptance.json",
         "acceptance.md",
+        "README.txt",
         "metadata.json",
     ]
-    assert set(metadata["artifacts"]) == {"doctor.json", "acceptance.json", "acceptance.md"}
+    assert set(metadata["artifacts"]) == {
+        "doctor.json",
+        "acceptance.json",
+        "acceptance.md",
+        "README.txt",
+    }
     assert metadata["inputs"]["acceptance_json"] == str(acceptance_json)
     assert metadata["inputs"]["acceptance_summary"] == str(acceptance_summary)
+    readme = (outdir / "README.txt").read_text(encoding="utf-8")
+    assert "`acceptance.md`" in readme
+    assert "human-readable handoff verdict" in readme
+    assert str(acceptance_json) not in readme
 
     with zipfile.ZipFile(outdir / "support-bundle.zip") as zf:
         names = set(zf.namelist())
-    assert {"acceptance.json", "acceptance.md", "MANIFEST.json"}.issubset(names)
+    assert {"acceptance.json", "acceptance.md", "README.txt", "MANIFEST.json"}.issubset(names)

@@ -211,9 +211,10 @@ support-bundle
    naviertwin support-bundle --outdir /tmp/naviertwin-support --preflight tests/fixtures/tiny_square.su2 --acceptance-json /tmp/naviertwin-acceptance.json --acceptance-summary /tmp/naviertwin-acceptance.md --zip
 
 Expected: writes ``doctor.json``, optional ``preflight.json``, optional
-``acceptance.json``/``acceptance.md``, ``metadata.json``, and when ``--zip`` is
-used, ``support-bundle.zip`` with ``MANIFEST.json``. Acceptance artifacts are
-redacted before being copied into the bundle.
+``acceptance.json``/``acceptance.md``, human-readable ``README.txt``,
+``metadata.json``, and when ``--zip`` is used, ``support-bundle.zip`` with
+``MANIFEST.json``. Acceptance artifacts and the read-first summary are redacted
+before being copied into the bundle.
 
 autorefine
 ----------

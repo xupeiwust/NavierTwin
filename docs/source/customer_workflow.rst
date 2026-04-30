@@ -134,7 +134,8 @@ validation 포함 여부, README/delivery metadata 존재 여부와 ``parameter_
 기대 결과: 환경 진단, optional preflight, acceptance JSON/Markdown 요약을
 redaction 후 하나의 ``support-bundle.zip`` 으로 묶습니다. 고객이 실패한
 acceptance 결과를 그대로 첨부해 보내면 개발/지원팀은 재현 정보, SLO 실패 항목,
-패키지 metadata를 한 번에 확인할 수 있습니다.
+패키지 metadata를 한 번에 확인할 수 있습니다. 번들 루트의 ``README.txt`` 는
+상태, 포함 파일, 경고/오류, 먼저 열 파일을 요약합니다.
 
 GUI 대응 흐름
 -------------

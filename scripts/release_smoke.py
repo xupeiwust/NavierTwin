@@ -173,6 +173,7 @@ def _validate_support_bundle_artifacts(payload: dict[str, object], outdir: Path)
         "preflight.json",
         "acceptance.json",
         "acceptance.md",
+        "README.txt",
         "metadata.json",
     ]
     if payload.get("files") != expected_files:
@@ -196,7 +197,13 @@ def _validate_support_bundle_artifacts(payload: dict[str, object], outdir: Path)
     if not isinstance(artifacts, dict):
         print("support-bundle payload missing artifacts integrity manifest", file=sys.stderr)
         return 1
-    for name in ["doctor.json", "preflight.json", "acceptance.json", "acceptance.md"]:
+    for name in [
+        "doctor.json",
+        "preflight.json",
+        "acceptance.json",
+        "acceptance.md",
+        "README.txt",
+    ]:
         entry = artifacts.get(name)
         if not isinstance(entry, dict):
             print(f"support-bundle artifact manifest missing {name}", file=sys.stderr)
