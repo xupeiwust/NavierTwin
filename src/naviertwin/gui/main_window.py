@@ -1762,8 +1762,8 @@ class MainWindow(QMainWindow):
         slo_text, ok = QInputDialog.getText(
             self,
             "수락 검사 SLO",
-            "max_p95_ms,min_throughput_hz (비우면 게이트 없음):",
-            text="100,10",
+            "max_p95_ms,min_throughput_hz (비우면 delivery.json latency_slo 사용):",
+            text="",
         )
         if not ok:
             return

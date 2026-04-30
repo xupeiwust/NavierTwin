@@ -1034,7 +1034,7 @@ def test_accept_twin_package_path_surfaces_failure(
     assert win._status_label.text() == "트윈 패키지 수락 검사 실패"
 
 
-def test_accept_twin_package_dialog_uses_slo_defaults(
+def test_accept_twin_package_dialog_defers_to_package_slo_by_default(
     qtbot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from PySide6.QtWidgets import QFileDialog, QInputDialog
@@ -1067,7 +1067,7 @@ def test_accept_twin_package_dialog_uses_slo_defaults(
         if title == "수락 검사 반복":
             return "1,3", True
         if title == "수락 검사 SLO":
-            return "100,10", True
+            return "", True
         raise AssertionError(f"unexpected dialog: {title}")
 
     monkeypatch.setattr(QInputDialog, "getText", fake_get_text)
@@ -1083,8 +1083,8 @@ def test_accept_twin_package_dialog_uses_slo_defaults(
     win._accept_twin_package()
 
     assert ("수락 검사 반복", "2,20") in dialogs
-    assert ("수락 검사 SLO", "100,10") in dialogs
-    assert calls == [(1, 3, 100.0, 10.0, tmp_path / "acceptance.json")]
+    assert ("수락 검사 SLO", "") in dialogs
+    assert calls == [(1, 3, None, None, tmp_path / "acceptance.json")]
 
 
 def test_api_server_start_uses_qprocess(qtbot, monkeypatch: pytest.MonkeyPatch) -> None:
