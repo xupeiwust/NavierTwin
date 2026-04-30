@@ -3005,10 +3005,18 @@ def _run_update_check(
             verification = verify_release_artifact(
                 Path(verify_artifact),
                 expected_sha256=release.sha256,
+                installer_signing=release.installer_signing,
             )
             payload["artifact_verification"] = verification.to_dict()
             if not verification.verified:
                 exit_code = 3
+            authenticode = verification.authenticode or {}
+            if (
+                authenticode.get("authenticode_required") is True
+                and authenticode.get("checked") is True
+                and authenticode.get("status") != "verified"
+            ):
+                exit_code = 4
     except (OSError, ValueError) as exc:
         print(f"update-check error: {exc}", file=sys.stderr)
         return 2

@@ -16,6 +16,11 @@ def _unsigned_metadata() -> dict[str, object]:
         "url": "https://github.com/naviertwin/naviertwin/releases/download/v4.2.59/NavierTwinSetup.exe",
         "sha256": "c" * 64,
         "notes": "release ops smoke",
+        "installer_signing": {
+            "publisher": "NavierTwin Contributors",
+            "certificate_thumbprint": "d2" * 20,
+            "authenticode_required": True,
+        },
     }
 
 
@@ -37,6 +42,8 @@ def test_sign_release_metadata_payload_verifies_with_matching_public_key(tmp_pat
     )
 
     assert metadata.signature_key_id == _TEST_KEY_ID
+    assert metadata.installer_signing is not None
+    assert metadata.installer_signing["certificate_thumbprint"] == ("D2" * 20)
     assert signed["signature"]["algorithm"] == "ed25519"  # type: ignore[index]
 
 

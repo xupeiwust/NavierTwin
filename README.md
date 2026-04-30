@@ -120,6 +120,7 @@ naviertwin update-check --metadata examples/release-metadata.example.json
 # 다운로드 후 설치파일 무결성 검증
 naviertwin update-check --metadata examples/release-metadata.example.json --verify-artifact NavierTwinSetup.exe
 # GUI Help → 업데이트 확인은 검증된 다운로드 URL 열기/복사/설치파일 검증을 제공
+# Windows 상용 빌드 서명: NAVIER_TWIN_SIGNTOOL='signtool sign ... $f' iscc installer\naviertwin.iss
 # 릴리스 담당자용: unsigned metadata 서명 생성(개인키는 env/file로만 주입)
 python scripts/sign_release_metadata.py --input release-unsigned.json --output release.json --key-id naviertwin-release-2026q2
 
@@ -257,7 +258,8 @@ src/naviertwin/
 - wheel artifact 검증: `python scripts/wheel_smoke.py --install-smoke`
 - sdist artifact 검증: `python scripts/sdist_smoke.py --install-smoke`
 - 서명된 업데이트 메타데이터 검증 및 설치 파일 handoff: `naviertwin update-check --metadata examples/release-metadata.example.json` (`url`/`sha256` 출력, GUI는 다운로드 열기/복사/설치파일 검증 버튼 제공)
-- 다운로드한 설치파일 무결성 검증: `naviertwin update-check --metadata examples/release-metadata.example.json --verify-artifact NavierTwinSetup.exe`
+- 다운로드한 설치파일 무결성 검증: `naviertwin update-check --metadata examples/release-metadata.example.json --verify-artifact NavierTwinSetup.exe` (metadata에 `installer_signing`이 있으면 Windows Authenticode 상태도 보고)
+- Windows 설치파일 Authenticode 준비: `NAVIER_TWIN_SIGNTOOL='signtool sign /fd SHA256 /td SHA256 /tr <timestamp-url> /a $f' iscc installer\naviertwin.iss`
 - 업데이트 메타데이터 서명 생성: `python scripts/sign_release_metadata.py --input release-unsigned.json --output release.json --key-id naviertwin-release-2026q2` (`NAVIER_TWIN_RELEASE_PRIVATE_KEY_B64` 또는 `--private-key-file` 필요)
 - benchmark smoke: `naviertwin benchmark --kind burgers`
 - REST 서버 실행: `naviertwin server --host 0.0.0.0 --port 8000`

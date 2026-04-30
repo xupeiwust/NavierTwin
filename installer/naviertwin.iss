@@ -1,6 +1,11 @@
 ; NavierTwin Inno Setup 스크립트 (Windows)
 ; 사용: `iscc installer\naviertwin.iss` (Inno Setup 6.x)
 ; PyInstaller 로 `dist/NavierTwin/` 를 먼저 빌드한 뒤 이 스크립트를 돌린다.
+; 상용 배포 서명:
+;   NAVIER_TWIN_SIGNTOOL='signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /a $f'
+;   처럼 설정하면 Inno Setup이 setup/uninstaller를 Authenticode 서명한다.
+
+#define NavierTwinSignTool GetEnv("NAVIER_TWIN_SIGNTOOL")
 
 [Setup]
 AppName=NavierTwin
@@ -19,6 +24,10 @@ LicenseFile=..\LICENSE
 SetupIconFile=
 UninstallDisplayIcon={app}\NavierTwin.exe
 DisableProgramGroupPage=auto
+#if NavierTwinSignTool != ""
+SignTool={#NavierTwinSignTool}
+SignedUninstaller=yes
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

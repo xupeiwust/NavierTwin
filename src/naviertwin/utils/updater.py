@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import platform
 import re
+import subprocess
 from base64 import b64decode
 from binascii import Error as Base64Error
 from collections.abc import Mapping
@@ -33,6 +35,7 @@ class ReleaseMetadata:
     sha256: str
     notes: str = ""
     signature_key_id: str = ""
+    installer_signing: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,7 @@ class UpdateCheckResult:
     update_available: bool
     url: str
     sha256: str
+    installer_signing: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable representation."""
@@ -60,6 +64,7 @@ class ArtifactVerificationResult:
     actual_sha256: str
     size_bytes: int
     verified: bool
+    authenticode: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable representation."""
@@ -105,6 +110,29 @@ def _normalize_sha256(value: str) -> str:
     return digest
 
 
+def _normalize_thumbprint(value: str) -> str:
+    """Normalize a SHA-1/SHA-256 certificate thumbprint."""
+    thumbprint = re.sub(r"[^0-9a-fA-F]", "", value).upper()
+    if re.fullmatch(r"[0-9A-F]{40}|[0-9A-F]{64}", thumbprint) is None:
+        raise ValueError("certificate_thumbprint must be 40 or 64 hex characters")
+    return thumbprint
+
+
+def _validate_installer_signing(value: object) -> dict[str, object]:
+    """Validate optional release metadata for Windows Authenticode identity."""
+    if not isinstance(value, dict):
+        raise ValueError("installer_signing must be a JSON object")
+    publisher = str(value.get("publisher", "")).strip()
+    thumbprint = _normalize_thumbprint(str(value.get("certificate_thumbprint", "")))
+    if not publisher:
+        raise ValueError("installer_signing.publisher is required")
+    return {
+        "publisher": publisher,
+        "certificate_thumbprint": thumbprint,
+        "authenticode_required": bool(value.get("authenticode_required", True)),
+    }
+
+
 def canonical_release_metadata_payload(data: Mapping[str, Any]) -> bytes:
     """Return the canonical byte payload covered by release metadata signatures."""
     payload = {
@@ -114,6 +142,10 @@ def canonical_release_metadata_payload(data: Mapping[str, Any]) -> bytes:
         "url": str(data.get("url", "")).strip(),
         "version": str(data.get("version", "")).strip(),
     }
+    if "installer_signing" in data:
+        payload["installer_signing"] = _validate_installer_signing(
+            data.get("installer_signing")
+        )
     return json.dumps(
         payload,
         ensure_ascii=False,
@@ -182,6 +214,11 @@ def load_release_metadata(
     url = str(data.get("url", "")).strip()
     sha256 = str(data.get("sha256", "")).strip().lower()
     notes = str(data.get("notes", "")).strip()
+    installer_signing = (
+        _validate_installer_signing(data.get("installer_signing"))
+        if "installer_signing" in data
+        else None
+    )
 
     if channel not in SUPPORTED_CHANNELS:
         raise ValueError(f"unsupported release channel: {channel!r}")
@@ -207,6 +244,7 @@ def load_release_metadata(
         sha256=sha256,
         notes=notes,
         signature_key_id=signature_key_id,
+        installer_signing=installer_signing,
     )
 
 
@@ -232,6 +270,7 @@ def check_for_update(
             update_available=False,
             url="",
             sha256="",
+            installer_signing=None,
         )
 
     return UpdateCheckResult(
@@ -241,21 +280,119 @@ def check_for_update(
         update_available=is_newer_version(metadata.version, current_version),
         url=metadata.url,
         sha256=metadata.sha256,
+        installer_signing=metadata.installer_signing,
     )
 
 
-def verify_release_artifact(path: Path, *, expected_sha256: str) -> ArtifactVerificationResult:
+def _read_authenticode_signature(path: Path) -> dict[str, object]:
+    """Read Windows Authenticode signature details via PowerShell."""
+    command = [
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        (
+            "$sig = Get-AuthenticodeSignature -LiteralPath $args[0]; "
+            "$cert = $sig.SignerCertificate; "
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+            "ConvertTo-Json @{"
+            "Status=[string]$sig.Status;"
+            "StatusMessage=[string]$sig.StatusMessage;"
+            "Subject=$(if ($cert) { [string]$cert.Subject } else { '' });"
+            "Thumbprint=$(if ($cert) { [string]$cert.Thumbprint } else { '' });"
+            "Issuer=$(if ($cert) { [string]$cert.Issuer } else { '' })"
+            "}"
+        ),
+        str(path),
+    ]
+    completed = subprocess.run(  # noqa: S603
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or "powershell Authenticode check failed")
+    payload = json.loads(completed.stdout)
+    if not isinstance(payload, dict):
+        raise ValueError("unexpected Authenticode PowerShell output")
+    return payload
+
+
+def _verify_authenticode(
+    path: Path,
+    expected: Mapping[str, object],
+) -> dict[str, object]:
+    """Verify Windows Authenticode identity when the current OS supports it."""
+    expected_publisher = str(expected.get("publisher", "")).strip()
+    expected_thumbprint = _normalize_thumbprint(
+        str(expected.get("certificate_thumbprint", ""))
+    )
+    report: dict[str, object] = {
+        "checked": False,
+        "status": "unavailable",
+        "expected_publisher": expected_publisher,
+        "expected_certificate_thumbprint": expected_thumbprint,
+        "authenticode_required": bool(expected.get("authenticode_required", True)),
+    }
+    if platform.system().lower() != "windows":
+        report["reason"] = "Authenticode verification requires Windows PowerShell"
+        return report
+
+    try:
+        signature = _read_authenticode_signature(path)
+    except (OSError, RuntimeError, ValueError) as exc:
+        report.update({"checked": False, "status": "error", "reason": str(exc)})
+        return report
+
+    status = str(signature.get("Status", ""))
+    subject = str(signature.get("Subject", ""))
+    actual_thumbprint = re.sub(
+        r"[^0-9a-fA-F]", "", str(signature.get("Thumbprint", ""))
+    ).upper()
+    publisher_ok = expected_publisher.lower() in subject.lower()
+    thumbprint_ok = actual_thumbprint == expected_thumbprint
+    valid = status.lower() == "valid"
+    report.update(
+        {
+            "checked": True,
+            "status": "verified" if valid and publisher_ok and thumbprint_ok else "failed",
+            "signature_status": status,
+            "publisher": subject,
+            "certificate_thumbprint": actual_thumbprint,
+            "issuer": str(signature.get("Issuer", "")),
+            "publisher_ok": publisher_ok,
+            "thumbprint_ok": thumbprint_ok,
+        }
+    )
+    return report
+
+
+def verify_release_artifact(
+    path: Path,
+    *,
+    expected_sha256: str,
+    installer_signing: Mapping[str, object] | None = None,
+) -> ArtifactVerificationResult:
     """Verify a downloaded release artifact against signed metadata SHA-256."""
     candidate = Path(path)
     expected = _normalize_sha256(expected_sha256)
     size_bytes = candidate.stat().st_size
     actual = hash_file(candidate)
+    authenticode = (
+        _verify_authenticode(candidate, installer_signing)
+        if installer_signing is not None
+        else None
+    )
     return ArtifactVerificationResult(
         path=str(candidate),
         expected_sha256=expected,
         actual_sha256=actual,
         size_bytes=size_bytes,
         verified=actual == expected,
+        authenticode=authenticode,
     )
 
 

@@ -72,3 +72,15 @@ def test_inno_publisher_fields_are_present_and_non_empty() -> None:
     )
     assert publisher
     assert publisher_url
+
+
+def test_inno_authenticode_signing_contract_is_env_driven() -> None:
+    """Commercial installer builds must support optional Authenticode signing."""
+    root = Path(__file__).resolve().parents[1]
+    iss = (root / "installer" / "naviertwin.iss").read_text(encoding="utf-8")
+
+    assert "NAVIER_TWIN_SIGNTOOL" in iss
+    assert '#define NavierTwinSignTool GetEnv("NAVIER_TWIN_SIGNTOOL")' in iss
+    assert "SignTool={#NavierTwinSignTool}" in iss
+    assert "SignedUninstaller=yes" in iss
+    assert "$f" in iss

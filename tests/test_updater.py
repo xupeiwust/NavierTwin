@@ -17,13 +17,25 @@ def _metadata(
     channel: str = "stable",
     url: str = "https://github.com/naviertwin/naviertwin/releases/download/v4.2.59/NavierTwinSetup.exe",
     sha256: str = "a" * 64,
+    installer_signing: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "version": version,
         "channel": channel,
         "url": url,
         "sha256": sha256,
         "notes": "smoke",
+    }
+    if installer_signing is not None:
+        payload["installer_signing"] = installer_signing
+    return payload
+
+
+def _installer_signing() -> dict[str, object]:
+    return {
+        "publisher": "NavierTwin Contributors",
+        "certificate_thumbprint": "a1" * 20,
+        "authenticode_required": True,
     }
 
 
@@ -93,6 +105,32 @@ def test_verify_release_artifact_matches_expected_hash(tmp_path) -> None:
     assert result.actual_sha256 == expected
 
 
+def test_verify_release_artifact_reports_authenticode_unavailable_on_non_windows(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import naviertwin.utils.updater as updater
+    from naviertwin.utils.updater import verify_release_artifact
+
+    data = b"naviertwin installer bytes"
+    artifact = tmp_path / "NavierTwinSetup.exe"
+    artifact.write_bytes(data)
+    expected = hashlib.sha256(data).hexdigest()
+    monkeypatch.setattr(updater.platform, "system", lambda: "Linux")
+
+    result = verify_release_artifact(
+        artifact,
+        expected_sha256=expected,
+        installer_signing=_installer_signing(),
+    )
+
+    assert result.verified is True
+    assert result.authenticode is not None
+    assert result.authenticode["status"] == "unavailable"
+    assert result.authenticode["checked"] is False
+    assert result.authenticode["expected_certificate_thumbprint"] == ("A1" * 20)
+
+
 def test_verify_release_artifact_reports_hash_mismatch(tmp_path) -> None:
     from naviertwin.utils.updater import verify_release_artifact
 
@@ -104,6 +142,36 @@ def test_verify_release_artifact_reports_hash_mismatch(tmp_path) -> None:
     assert result.verified is False
     assert result.expected_sha256 == "0" * 64
     assert result.actual_sha256 != result.expected_sha256
+
+
+def test_update_metadata_accepts_signed_installer_identity(tmp_path) -> None:
+    from naviertwin.utils.updater import load_release_metadata
+
+    path = tmp_path / "release.json"
+    path.write_text(
+        json.dumps(_signed_metadata(installer_signing=_installer_signing())),
+        encoding="utf-8",
+    )
+
+    metadata = load_release_metadata(path, trusted_public_keys=_test_public_keys())
+
+    assert metadata.installer_signing is not None
+    assert metadata.installer_signing["publisher"] == "NavierTwin Contributors"
+    assert metadata.installer_signing["certificate_thumbprint"] == ("A1" * 20)
+
+
+def test_update_metadata_rejects_tampered_installer_identity(tmp_path) -> None:
+    from naviertwin.utils.updater import load_release_metadata
+
+    payload = _signed_metadata(installer_signing=_installer_signing())
+    installer_signing = payload["installer_signing"]
+    assert isinstance(installer_signing, dict)
+    installer_signing["publisher"] = "Unexpected Publisher"
+    path = tmp_path / "release.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="signature verification failed"):
+        load_release_metadata(path, trusted_public_keys=_test_public_keys())
 
 
 def test_update_metadata_rejects_unsigned_metadata(tmp_path) -> None:
@@ -271,6 +339,44 @@ def test_update_check_cli_verifies_downloaded_artifact(tmp_path, capsys) -> None
     assert code == 0
     assert output["artifact_verification"]["verified"] is True
     assert output["artifact_verification"]["path"] == str(artifact)
+
+
+def test_update_check_cli_reports_installer_identity_status(
+    tmp_path,
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import naviertwin.utils.updater as updater
+    from naviertwin.main import _run_update_check
+
+    data = b"downloaded installer bytes"
+    artifact = tmp_path / "NavierTwinSetup.exe"
+    artifact.write_bytes(data)
+    metadata = tmp_path / "release.json"
+    metadata.write_text(
+        json.dumps(
+            _signed_metadata(
+                sha256=hashlib.sha256(data).hexdigest(),
+                installer_signing=_installer_signing(),
+            )
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(updater.platform, "system", lambda: "Linux")
+
+    code = _run_update_check(
+        metadata=str(metadata),
+        channel="stable",
+        current_version="4.2.58",
+        verify_artifact=str(artifact),
+        trusted_public_keys=_test_public_keys(),
+    )
+    output = json.loads(capsys.readouterr().out)
+
+    assert code == 0
+    authenticode = output["artifact_verification"]["authenticode"]
+    assert authenticode["status"] == "unavailable"
+    assert authenticode["authenticode_required"] is True
 
 
 def test_update_check_cli_reports_downloaded_artifact_mismatch(tmp_path, capsys) -> None:

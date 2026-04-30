@@ -113,6 +113,26 @@ def main() -> int:
         "AppPublisherURL=",
         message="Inno AppPublisherURL key must exist",
     )
+    checks += _assert_contains(
+        iss,
+        "NAVIER_TWIN_SIGNTOOL",
+        message="Inno must expose env-driven Authenticode SignTool configuration",
+    )
+    checks += _assert_contains(
+        iss,
+        "SignTool={#NavierTwinSignTool}",
+        message="Inno SignTool must be driven by NAVIER_TWIN_SIGNTOOL",
+    )
+    checks += _assert_contains(
+        iss,
+        "SignedUninstaller=yes",
+        message="Inno signed builds must sign the uninstaller",
+    )
+    checks += _assert_contains(
+        iss,
+        "$f",
+        message="Inno SignTool documentation must include the setup-file placeholder",
+    )
 
     publisher = next(
         (line.split("=", 1)[1].strip() for line in iss.splitlines() if line.startswith("AppPublisher=")),

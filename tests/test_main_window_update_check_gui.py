@@ -148,6 +148,7 @@ def test_main_window_update_artifact_verification_succeeds(
 ) -> None:
     from PySide6.QtWidgets import QMessageBox
 
+    import naviertwin.utils.updater as updater
     from naviertwin.gui.main_window import MainWindow
     from naviertwin.utils.updater import UpdateCheckResult
 
@@ -160,6 +161,7 @@ def test_main_window_update_artifact_verification_succeeds(
         messages.append((title, text))
 
     monkeypatch.setattr(QMessageBox, "information", capture_information)
+    monkeypatch.setattr(updater.platform, "system", lambda: "Linux")
     win = MainWindow(confirm_on_close=False)
     qtbot.addWidget(win)
 
@@ -170,12 +172,18 @@ def test_main_window_update_artifact_verification_succeeds(
         update_available=True,
         url="https://github.com/naviertwin/naviertwin/releases/download/v4.2.59/NavierTwinSetup.exe",
         sha256=hashlib.sha256(data).hexdigest(),
+        installer_signing={
+            "publisher": "NavierTwin Contributors",
+            "certificate_thumbprint": "e3" * 20,
+            "authenticode_required": True,
+        },
     )
 
     assert win._verify_update_artifact_path(result, artifact) is True
     assert messages
     assert messages[0][0] == "설치파일 검증 성공"
     assert "SHA256" in messages[0][1]
+    assert "Authenticode: unavailable" in messages[0][1]
     assert win._status_label.text() == "업데이트 설치파일 검증 성공"
 
 

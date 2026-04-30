@@ -2307,13 +2307,23 @@ class MainWindow(QMainWindow):
         from naviertwin.utils.updater import verify_release_artifact
 
         try:
-            verification = verify_release_artifact(path, expected_sha256=result.sha256)
+            verification = verify_release_artifact(
+                path,
+                expected_sha256=result.sha256,
+                installer_signing=result.installer_signing,
+            )
         except (OSError, ValueError) as exc:
             self._set_status("업데이트 설치파일 검증 실패")
             QMessageBox.warning(self, "설치파일 검증 실패", str(exc))
             return False
 
         if verification.verified:
+            authenticode = verification.authenticode or {}
+            authenticode_line = (
+                f"\nAuthenticode: {authenticode.get('status')}"
+                if authenticode
+                else ""
+            )
             self._set_status("업데이트 설치파일 검증 성공")
             QMessageBox.information(
                 self,
@@ -2323,6 +2333,7 @@ class MainWindow(QMainWindow):
                     f"파일: {verification.path}\n"
                     f"크기: {verification.size_bytes} bytes\n"
                     f"SHA256: {verification.actual_sha256}"
+                    f"{authenticode_line}"
                 ),
             )
             return True
