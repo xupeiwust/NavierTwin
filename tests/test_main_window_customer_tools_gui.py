@@ -27,6 +27,7 @@ def test_tools_menu_exposes_pipeline_demo_and_server_actions(qtbot) -> None:
     assert any("저장된 트윈 검증" in text for text in actions)
     assert any("트윈 산출물 패키징" in text for text in actions)
     assert any("트윈 패키지 검증" in text for text in actions)
+    assert any("트윈 패키지 검증 후 추출" in text for text in actions)
     assert any("API 서버 시작" in text for text in actions)
     assert any("API 서버 중지" in text for text in actions)
 
@@ -475,6 +476,40 @@ def test_verify_twin_package_path_surfaces_failure(
     assert warnings[0][0] == "트윈 패키지 검증 실패"
     assert "1" in warnings[0][1]
     assert win._status_label.text() == "트윈 패키지 검증 실패"
+
+
+def test_verify_twin_package_path_can_extract_after_verification(
+    qtbot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from naviertwin.gui.main_window import MainWindow
+
+    win = MainWindow(confirm_on_close=False)
+    qtbot.addWidget(win)
+    calls: list[tuple[Path, Path | None]] = []
+    messages: list[tuple[str, str]] = []
+
+    def fake_verify(package_path: Path, *, extract_to: Path | None = None) -> int:
+        calls.append((package_path, extract_to))
+        return 0
+
+    monkeypatch.setattr(win, "_run_verify_twin_package_cli", fake_verify)
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda parent, title, text: messages.append((title, text)),
+    )
+
+    package_path = tmp_path / "delivery.zip"
+    extract_to = tmp_path / "deployed"
+    win._verify_twin_package_path(package_path, extract_to=extract_to)
+
+    assert calls == [(package_path, extract_to)]
+    assert messages
+    assert messages[0][0] == "트윈 패키지 검증 및 추출 완료"
+    assert str(extract_to) in messages[0][1]
+    assert win._status_label.text() == "트윈 패키지 검증 및 추출 완료"
 
 
 def test_api_server_start_uses_qprocess(qtbot, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -185,6 +185,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="고객 전달용 트윈 ZIP 무결성 검증",
     )
     p_verify_package.add_argument("--package", required=True, help="검증할 package-twin ZIP 경로")
+    p_verify_package.add_argument(
+        "--extract-to",
+        default=None,
+        help="검증 성공 시 ZIP 내용을 안전하게 추출할 디렉토리",
+    )
     p_verify_package.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
 
     # preflight
@@ -382,7 +387,13 @@ def main() -> None:
             )
         )
     elif args.command == "verify-twin-package":
-        sys.exit(_run_verify_twin_package(package_path=args.package, as_json=args.as_json))
+        sys.exit(
+            _run_verify_twin_package(
+                package_path=args.package,
+                extract_to=args.extract_to,
+                as_json=args.as_json,
+            )
+        )
     elif args.command == "preflight":
         sys.exit(_run_preflight(path=args.path, as_json=args.as_json, output=args.output))
     elif args.command == "support-bundle":
@@ -1272,7 +1283,10 @@ def _build_twin_delivery_entries(
         "--field-column U --max-rmse 0.05 --min-r2 0.98 "
         "--output validation.json --json"
     )
-    verify_command = "naviertwin verify-twin-package --package naviertwin-twin.zip --json"
+    verify_command = (
+        "naviertwin verify-twin-package --package naviertwin-twin.zip "
+        "--extract-to ./naviertwin-twin --json"
+    )
     delivery = {
         "format": "NavierTwin delivery package",
         "schema": "naviertwin-delivery-v1",
@@ -1308,7 +1322,7 @@ def _build_twin_delivery_entries(
             "- validation.json: optional independent validation report",
             "",
             "Recommended checks:",
-            "1. Verify this ZIP:",
+            "1. Verify and extract this ZIP:",
             f"   {verify_command}",
             "2. Run a prediction:",
             f"   {predict_command}",
@@ -1385,10 +1399,18 @@ def _collect_twin_package_artifacts(
     return list(dict.fromkeys(path.resolve() for path in files))
 
 
-def _run_verify_twin_package(*, package_path: str, as_json: bool) -> int:
+def _run_verify_twin_package(
+    *,
+    package_path: str,
+    extract_to: str | None = None,
+    as_json: bool,
+) -> int:
     """package-twin ZIP의 MANIFEST.json 무결성 기록을 검증한다."""
     try:
-        payload = _verify_twin_package_archive(Path(package_path).expanduser())
+        payload = _verify_twin_package_archive(
+            Path(package_path).expanduser(),
+            extract_to=Path(extract_to).expanduser() if extract_to else None,
+        )
     except (OSError, RuntimeError, ValueError, KeyError) as exc:
         print(f"verify-twin-package error: {exc}", file=sys.stderr)
         return 2
@@ -1400,12 +1422,60 @@ def _run_verify_twin_package(*, package_path: str, as_json: bool) -> int:
             "verify-twin-package 완료: "
             f"status={payload['status']}, checks={len(payload['checks'])}"
         )
+        if payload.get("extracted_to"):
+            print(f"extracted_to: {payload['extracted_to']}")
         if payload["errors"]:
             print("errors: " + "; ".join(payload["errors"]))
     return 0 if payload["status"] == "ok" else 1
 
 
-def _verify_twin_package_archive(package_path: Path) -> dict[str, Any]:
+def _is_safe_zip_member_name(name: str) -> bool:
+    """ZIP member 이름이 대상 디렉토리 밖을 가리키지 않는지 검사한다."""
+    from pathlib import PurePosixPath
+
+    path = PurePosixPath(name)
+    return bool(name) and not path.is_absolute() and ".." not in path.parts
+
+
+def _extract_verified_twin_package(package_path: Path, extract_to: Path) -> list[str]:
+    """검증 완료된 ZIP을 path traversal 없이 추출한다."""
+    import tempfile
+    import zipfile
+
+    root = extract_to.resolve()
+    if root.exists() and not root.is_dir():
+        raise ValueError(f"extract target must be a directory: {root}")
+    if root.exists() and any(root.iterdir()):
+        raise ValueError(f"extract target must be empty: {root}")
+    root.parent.mkdir(parents=True, exist_ok=True)
+
+    extracted: list[str] = []
+    with tempfile.TemporaryDirectory(prefix=f".{root.name}.", dir=root.parent) as staging_raw:
+        staging = Path(staging_raw).resolve()
+        with zipfile.ZipFile(package_path) as archive:
+            for info in archive.infolist():
+                name = info.filename
+                if info.is_dir():
+                    continue
+                if not _is_safe_zip_member_name(name):
+                    raise ValueError(f"unsafe archive entry: {name}")
+                target = (staging / name).resolve()
+                if staging != target and staging not in target.parents:
+                    raise ValueError(f"unsafe archive entry: {name}")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.read(info))
+                extracted.append(name)
+        if root.exists():
+            root.rmdir()
+        staging.rename(root)
+    return extracted
+
+
+def _verify_twin_package_archive(
+    package_path: Path,
+    *,
+    extract_to: Path | None = None,
+) -> dict[str, Any]:
     """ZIP 내부 MANIFEST.json의 bytes/SHA256과 실제 archive entry를 대조한다."""
     import zipfile
     from collections import Counter
@@ -1417,12 +1487,18 @@ def _verify_twin_package_archive(package_path: Path) -> dict[str, Any]:
     required_entries = {"engine.pkl", "manifest.json"}
     errors: list[str] = []
     checks: list[dict[str, Any]] = []
+    duplicate_archive_entries: list[str] = []
+    duplicate_manifest_entries: list[str] = []
     with zipfile.ZipFile(package_path) as archive:
         archived_names = archive.namelist()
         names = set(archived_names)
         for name, count in sorted(Counter(archived_names).items()):
             if count > 1:
+                duplicate_archive_entries.append(name)
                 errors.append(f"duplicate archive entry: {name}")
+        for name in sorted(names):
+            if not _is_safe_zip_member_name(name):
+                errors.append(f"unsafe archive entry: {name}")
         if "MANIFEST.json" not in names:
             errors.append("missing MANIFEST.json")
             manifest_entries: list[Any] = []
@@ -1438,6 +1514,7 @@ def _verify_twin_package_archive(package_path: Path) -> dict[str, Any]:
                 continue
             name = str(entry.get("name", ""))
             if name in manifest_names:
+                duplicate_manifest_entries.append(name)
                 errors.append(f"duplicate MANIFEST.json entry: {name}")
             manifest_names.add(name)
             if name not in names:
@@ -1463,17 +1540,27 @@ def _verify_twin_package_archive(package_path: Path) -> dict[str, Any]:
                 }
             )
 
+    for name in sorted((names - {"MANIFEST.json"}) - manifest_names):
+        errors.append(f"unmanifested archive entry: {name}")
     for name in sorted(required_entries - manifest_names):
         errors.append(f"missing required artifact in MANIFEST.json: {name}")
     passed = not errors and all(check.get("passed") is True for check in checks)
-    return {
+    payload = {
         "status": "ok" if passed else "failed",
         "package": str(package_path),
         "required_entries": sorted(required_entries),
         "manifest_entry_count": len(checks),
+        "duplicate_archive_entries": duplicate_archive_entries,
+        "duplicate_manifest_entries": duplicate_manifest_entries,
         "checks": checks,
         "errors": errors,
     }
+    if extract_to is not None:
+        payload["extracted_to"] = str(extract_to)
+        payload["extracted_entries"] = (
+            _extract_verified_twin_package(package_path, extract_to) if passed else []
+        )
+    return payload
 
 
 def _run_preflight(*, path: str, as_json: bool, output: str | None = None) -> int:

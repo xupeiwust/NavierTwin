@@ -120,11 +120,14 @@ verify-twin-package
 
 .. code-block:: bash
 
-   naviertwin verify-twin-package --package /tmp/naviertwin-twin.zip --json
+   naviertwin verify-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-deploy --json
 
 Expected: reads the delivery ZIP ``MANIFEST.json`` and verifies each archived
 entry's bytes/SHA256. It also checks that ``engine.pkl`` and ``manifest.json``
-are covered by the archive manifest. Integrity mismatch exits non-zero.
+are covered by the archive manifest. Duplicate entries, unsafe archive paths,
+unmanifested files, and integrity mismatches exit non-zero. When ``--extract-to``
+is provided, extraction happens only after verification succeeds and the target
+directory is new or empty.
 
 preflight
 ---------

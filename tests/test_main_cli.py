@@ -176,11 +176,14 @@ class TestBuildParser:
                 "verify-twin-package",
                 "--package",
                 str(tmp_path / "twin.zip"),
+                "--extract-to",
+                str(tmp_path / "deploy"),
                 "--json",
             ]
         )
         assert args.command == "verify-twin-package"
         assert args.package.endswith("twin.zip")
+        assert args.extract_to.endswith("deploy")
         assert args.as_json is True
 
     def test_parse_autorefine_subcommand(self) -> None:
@@ -437,6 +440,7 @@ class TestRunBuildTwin:
 
         verify_code = _run_verify_twin_package(
             package_path=str(tmp_path / "twin-delivery.zip"),
+            extract_to=str(tmp_path / "deployed-twin"),
             as_json=True,
         )
         verify_payload = json.loads(capsys.readouterr().out)
@@ -444,7 +448,22 @@ class TestRunBuildTwin:
         assert verify_code == 0
         assert verify_payload["status"] == "ok"
         assert verify_payload["manifest_entry_count"] >= 7
+        assert verify_payload["extracted_to"].endswith("deployed-twin")
+        assert "engine.pkl" in verify_payload["extracted_entries"]
         assert not verify_payload["errors"]
+        assert (tmp_path / "deployed-twin" / "engine.pkl").exists()
+        assert (tmp_path / "deployed-twin" / "README.txt").exists()
+
+        repeat_extract_code = _run_verify_twin_package(
+            package_path=str(tmp_path / "twin-delivery.zip"),
+            extract_to=str(tmp_path / "deployed-twin"),
+            as_json=True,
+        )
+        repeat_extract_output = capsys.readouterr()
+
+        assert repeat_extract_code == 2
+        assert repeat_extract_output.out == ""
+        assert "extract target must be empty" in repeat_extract_output.err
 
         bad_zip = tmp_path / "bad-delivery.zip"
         with zipfile.ZipFile(bad_zip, "w") as archive:
@@ -463,7 +482,11 @@ class TestRunBuildTwin:
                     ]
                 ),
             )
-        bad_code = _run_verify_twin_package(package_path=str(bad_zip), as_json=True)
+        bad_code = _run_verify_twin_package(
+            package_path=str(bad_zip),
+            extract_to=None,
+            as_json=True,
+        )
         bad_payload = json.loads(capsys.readouterr().out)
 
         assert bad_code == 1
@@ -497,13 +520,56 @@ class TestRunBuildTwin:
             )
         duplicate_code = _run_verify_twin_package(
             package_path=str(duplicate_zip),
+            extract_to=None,
             as_json=True,
         )
         duplicate_payload = json.loads(capsys.readouterr().out)
 
         assert duplicate_code == 1
         assert duplicate_payload["status"] == "failed"
+        assert duplicate_payload["duplicate_archive_entries"] == ["engine.pkl"]
         assert "duplicate archive entry: engine.pkl" in duplicate_payload["errors"]
+
+        unsafe_zip = tmp_path / "unsafe-delivery.zip"
+        unsafe_data = b"escape"
+        with zipfile.ZipFile(unsafe_zip, "w") as archive:
+            archive.writestr("engine.pkl", engine_data)
+            archive.writestr("manifest.json", manifest_data)
+            archive.writestr("../evil.txt", unsafe_data)
+            archive.writestr(
+                "MANIFEST.json",
+                json.dumps(
+                    [
+                        {
+                            "name": "engine.pkl",
+                            "bytes": len(engine_data),
+                            "sha256": sha256(engine_data).hexdigest(),
+                        },
+                        {
+                            "name": "manifest.json",
+                            "bytes": len(manifest_data),
+                            "sha256": sha256(manifest_data).hexdigest(),
+                        },
+                        {
+                            "name": "../evil.txt",
+                            "bytes": len(unsafe_data),
+                            "sha256": sha256(unsafe_data).hexdigest(),
+                        },
+                    ]
+                ),
+            )
+        unsafe_code = _run_verify_twin_package(
+            package_path=str(unsafe_zip),
+            extract_to=str(tmp_path / "unsafe-out"),
+            as_json=True,
+        )
+        unsafe_payload = json.loads(capsys.readouterr().out)
+
+        assert unsafe_code == 1
+        assert unsafe_payload["status"] == "failed"
+        assert "unsafe archive entry: ../evil.txt" in unsafe_payload["errors"]
+        assert unsafe_payload["extracted_entries"] == []
+        assert not (tmp_path / "evil.txt").exists()
 
         (tmp_path / "twin" / "engine.pkl").write_bytes(b"tampered")
         tampered_code = _run_package_twin(

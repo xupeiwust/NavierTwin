@@ -153,7 +153,7 @@ naviertwin build-twin --csv-snapshots "case/snapshots/*.csv" --field-column U --
 naviertwin predict-twin --engine /tmp/naviertwin-twin/engine.pkl --params 0.25 --output /tmp/naviertwin-prediction.csv --json
 naviertwin validate-twin --engine /tmp/naviertwin-twin/engine.pkl --csv-snapshots "case/snapshots/*.csv" --field-column U --max-rmse 0.05 --min-r2 0.98 --output /tmp/naviertwin-validation.json --json
 naviertwin package-twin --artifacts-dir /tmp/naviertwin-twin --include-validation /tmp/naviertwin-validation.json --output /tmp/naviertwin-twin.zip --json
-naviertwin verify-twin-package --package /tmp/naviertwin-twin.zip --json
+naviertwin verify-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-deploy --json
 
 # 전체 core 회귀 수집
 QT_QPA_PLATFORM=offscreen MPLCONFIGDIR=/tmp/mpl pytest --collect-only -q
@@ -259,7 +259,7 @@ src/naviertwin/
 - 저장된 트윈 예측 실행: `naviertwin predict-twin --engine /tmp/naviertwin-twin/engine.pkl --params 0.25 --output /tmp/naviertwin-prediction.csv --json`
 - 저장된 트윈 검증 실행: `naviertwin validate-twin --engine /tmp/naviertwin-twin/engine.pkl --csv-snapshots "case/snapshots/*.csv" --field-column U --max-rmse 0.05 --min-r2 0.98 --output /tmp/naviertwin-validation.json --json`
 - 트윈 산출물 ZIP 패키징(README.txt/delivery.json 포함): `naviertwin package-twin --artifacts-dir /tmp/naviertwin-twin --include-validation /tmp/naviertwin-validation.json --output /tmp/naviertwin-twin.zip --json`
-- 트윈 전달 ZIP 검증: `naviertwin verify-twin-package --package /tmp/naviertwin-twin.zip --json`
+- 트윈 전달 ZIP 검증/안전 추출: `naviertwin verify-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-deploy --json`
 - 전체 core 회귀: `QT_QPA_PLATFORM=offscreen MPLCONFIGDIR=/tmp/mpl pytest -q`
 - 전체 collection 안전성: `QT_QPA_PLATFORM=offscreen MPLCONFIGDIR=/tmp/mpl pytest --collect-only -q`
 - optional 의존성이 필요한 모듈은 `pytest.mark.optional`로 기본 core 실행에서 제외한다.

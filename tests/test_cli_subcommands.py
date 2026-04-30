@@ -232,6 +232,8 @@ class TestCLISubcommands:
                 "verify-twin-package",
                 "--package",
                 str(tmp_path / "twin-delivery.zip"),
+                "--extract-to",
+                str(tmp_path / "deployed-twin"),
                 "--json",
             ],
             capture_output=True,
@@ -243,3 +245,5 @@ class TestCLISubcommands:
         verify_payload = json.loads(verify_package_result.stdout)
         assert verify_payload["status"] == "ok"
         assert verify_payload["manifest_entry_count"] >= 7
+        assert verify_payload["extracted_to"].endswith("deployed-twin")
+        assert (tmp_path / "deployed-twin" / "engine.pkl").exists()

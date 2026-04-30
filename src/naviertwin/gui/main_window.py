@@ -307,6 +307,10 @@ class MainWindow(QMainWindow):
         verify_twin_package_action.triggered.connect(self._verify_twin_package)
         self._tools_menu.addAction(verify_twin_package_action)
 
+        extract_twin_package_action = QAction("트윈 패키지 검증 후 추출(&U)", self)
+        extract_twin_package_action.triggered.connect(self._verify_and_extract_twin_package)
+        self._tools_menu.addAction(extract_twin_package_action)
+
         server_start_action = QAction("API 서버 시작(&S)", self)
         server_start_action.triggered.connect(self._start_api_server)
         self._tools_menu.addAction(server_start_action)
@@ -1144,10 +1148,36 @@ class MainWindow(QMainWindow):
         if package_path:
             self._verify_twin_package_path(Path(package_path))
 
-    def _verify_twin_package_path(self, package_path: Path) -> None:
+    def _verify_and_extract_twin_package(self) -> None:
+        """고객 전달용 트윈 ZIP을 검증한 뒤 선택한 디렉토리에 추출한다."""
+        package_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "트윈 ZIP 선택",
+            "",
+            "ZIP (*.zip)",
+        )
+        if not package_path:
+            return
+        extract_dir = QFileDialog.getExistingDirectory(
+            self,
+            "트윈 패키지 추출 디렉토리 선택",
+            "",
+        )
+        if extract_dir:
+            self._verify_twin_package_path(Path(package_path), extract_to=Path(extract_dir))
+
+    def _verify_twin_package_path(
+        self,
+        package_path: Path,
+        *,
+        extract_to: Path | None = None,
+    ) -> None:
         """GUI에서 verify-twin-package CLI 워크플로우를 실행한다."""
         try:
-            code = self._run_verify_twin_package_cli(package_path)
+            if extract_to is None:
+                code = self._run_verify_twin_package_cli(package_path)
+            else:
+                code = self._run_verify_twin_package_cli(package_path, extract_to=extract_to)
         except Exception as exc:  # noqa: BLE001
             self._set_status("트윈 패키지 검증 실패")
             QMessageBox.warning(self, "트윈 패키지 검증 실패", str(exc))
@@ -1161,18 +1191,32 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self._set_status("트윈 패키지 검증 완료")
+        if extract_to is None:
+            self._set_status("트윈 패키지 검증 완료")
+            message = f"ZIP 무결성 검증 완료:\n{package_path}"
+        else:
+            self._set_status("트윈 패키지 검증 및 추출 완료")
+            message = f"ZIP 무결성 검증 및 추출 완료:\n{package_path}\n\n추출 위치:\n{extract_to}"
         QMessageBox.information(
             self,
-            "트윈 패키지 검증 완료",
-            f"ZIP 무결성 검증 완료:\n{package_path}",
+            self._status_label.text(),
+            message,
         )
 
-    def _run_verify_twin_package_cli(self, package_path: Path) -> int:
+    def _run_verify_twin_package_cli(
+        self,
+        package_path: Path,
+        *,
+        extract_to: Path | None = None,
+    ) -> int:
         """테스트에서 대체 가능한 verify-twin-package 실행 래퍼."""
         from naviertwin.main import _run_verify_twin_package
 
-        return _run_verify_twin_package(package_path=str(package_path), as_json=False)
+        return _run_verify_twin_package(
+            package_path=str(package_path),
+            extract_to=str(extract_to) if extract_to is not None else None,
+            as_json=False,
+        )
 
     def _load_engine_artifact(self, engine_path: Path) -> bool:
         """저장된 TwinEngine 아티팩트를 Twin/Export 패널에 연결한다."""
