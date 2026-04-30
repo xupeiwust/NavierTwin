@@ -14,6 +14,7 @@ EXPECTED_SUBCOMMANDS = [
     "pipeline-demo",
     "model-sweep",
     "build-twin",
+    "predict-twin",
     "preflight",
     "support-bundle",
     "autorefine",
@@ -133,3 +134,29 @@ class TestCLISubcommands:
         assert (outdir / "pipeline.h5").exists()
         assert (outdir / "engine.pkl").exists()
         assert (outdir / "manifest.json").exists()
+
+        predict_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "naviertwin.main",
+                "predict-twin",
+                "--engine",
+                str(outdir / "engine.pkl"),
+                "--params",
+                "0.25",
+                "--output",
+                str(tmp_path / "prediction.csv"),
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert predict_result.returncode == 0, predict_result.stderr
+
+        prediction_payload = json.loads(predict_result.stdout)
+        assert prediction_payload["status"] == "ok"
+        assert prediction_payload["input_shape"] == [1]
+        assert prediction_payload["prediction_shape"] == [8]
+        assert (tmp_path / "prediction.csv").exists()

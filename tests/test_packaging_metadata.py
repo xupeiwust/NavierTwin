@@ -147,6 +147,7 @@ def test_readme_documents_shipped_cli_surface() -> None:
         "naviertwin pipeline-demo --outdir",
         "naviertwin model-sweep --reducers pod",
         "naviertwin build-twin --csv-snapshots",
+        "naviertwin predict-twin --engine",
     ]
 
     for command in expected_commands:

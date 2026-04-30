@@ -150,6 +150,7 @@ naviertwin model-sweep --reducers pod --n-modes 2,3,5 --surrogates rbf,kriging -
 
 # CFD/CSV 데이터셋에서 트윈 산출물 생성
 naviertwin build-twin --csv-snapshots "case/snapshots/*.csv" --field-column U --outdir /tmp/naviertwin-twin --json
+naviertwin predict-twin --engine /tmp/naviertwin-twin/engine.pkl --params 0.25 --output /tmp/naviertwin-prediction.csv --json
 
 # 전체 core 회귀 수집
 QT_QPA_PLATFORM=offscreen MPLCONFIGDIR=/tmp/mpl pytest --collect-only -q
@@ -252,6 +253,7 @@ src/naviertwin/
 - 합성 파이프라인 데모: `naviertwin pipeline-demo --outdir /tmp/naviertwin-pipeline-demo`
 - ROM/surrogate 후보 자동 비교: `naviertwin model-sweep --reducers pod --n-modes 2,3,5 --surrogates rbf,kriging --json`
 - CFD/CSV 데이터셋에서 트윈 산출물 생성: `naviertwin build-twin --csv-snapshots "case/snapshots/*.csv" --field-column U --outdir /tmp/naviertwin-twin --json`
+- 저장된 트윈 예측 실행: `naviertwin predict-twin --engine /tmp/naviertwin-twin/engine.pkl --params 0.25 --output /tmp/naviertwin-prediction.csv --json`
 - 전체 core 회귀: `QT_QPA_PLATFORM=offscreen MPLCONFIGDIR=/tmp/mpl pytest -q`
 - 전체 collection 안전성: `QT_QPA_PLATFORM=offscreen MPLCONFIGDIR=/tmp/mpl pytest --collect-only -q`
 - optional 의존성이 필요한 모듈은 `pytest.mark.optional`로 기본 core 실행에서 제외한다.

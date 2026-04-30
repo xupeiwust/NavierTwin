@@ -102,6 +102,25 @@ class TestBuildParser:
         assert args.validation_count == 2
         assert args.as_json is True
 
+    def test_parse_predict_twin_subcommand(self, tmp_path) -> None:
+        from naviertwin.main import _build_parser
+
+        p = _build_parser()
+        args = p.parse_args(
+            [
+                "predict-twin",
+                "--engine",
+                str(tmp_path / "engine.pkl"),
+                "--params",
+                "0.25",
+                "--json",
+            ]
+        )
+        assert args.command == "predict-twin"
+        assert args.engine.endswith("engine.pkl")
+        assert args.params == "0.25"
+        assert args.as_json is True
+
     def test_parse_autorefine_subcommand(self) -> None:
         from naviertwin.main import _build_parser
 
@@ -215,7 +234,7 @@ class TestRunBuildTwin:
         pytest.importorskip("h5py")
         pytest.importorskip("pandas")
         pytest.importorskip("sklearn")
-        from naviertwin.main import _run_build_twin
+        from naviertwin.main import _run_build_twin, _run_predict_twin
 
         paths = []
         for step in range(10):
@@ -253,6 +272,20 @@ class TestRunBuildTwin:
         engine = TwinEngine.load(tmp_path / "twin" / "engine.pkl")
         prediction = engine.predict(np.array([0.25]))
         assert prediction.shape == (8,)
+
+        predict_code = _run_predict_twin(
+            engine_path=str(tmp_path / "twin" / "engine.pkl"),
+            params="0.25",
+            params_csv=None,
+            param_columns=None,
+            output=str(tmp_path / "prediction.csv"),
+            as_json=True,
+        )
+        predict_payload = json.loads(capsys.readouterr().out)
+
+        assert predict_code == 0
+        assert predict_payload["prediction_shape"] == [8]
+        assert (tmp_path / "prediction.csv").exists()
 
     def test_run_build_twin_reports_small_dataset(self, tmp_path, capsys) -> None:
         from naviertwin.main import _run_build_twin

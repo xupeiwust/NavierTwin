@@ -125,6 +125,20 @@ def _build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--validation-count", type=int, default=3)
     p_build.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
 
+    # predict-twin
+    p_predict = sub.add_parser("predict-twin", help="저장된 TwinEngine으로 즉시 예측")
+    p_predict.add_argument("--engine", required=True, help="build-twin이 생성한 engine.pkl 경로")
+    predict_source = p_predict.add_mutually_exclusive_group(required=True)
+    predict_source.add_argument("--params", default=None, help="쉼표 구분 단일 입력 파라미터")
+    predict_source.add_argument("--params-csv", default=None, help="배치 입력 파라미터 CSV 경로")
+    p_predict.add_argument(
+        "--param-columns",
+        default=None,
+        help="쉼표 구분 파라미터 컬럼명. 생략하면 numeric 컬럼 전체 사용",
+    )
+    p_predict.add_argument("--output", default=None, help="예측 필드 CSV 저장 경로")
+    p_predict.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
+
     # preflight
     p_preflight = sub.add_parser("preflight", help="CFD 입력 데이터 readiness 점검")
     p_preflight.add_argument("path", help="점검할 CFD 파일 또는 케이스 디렉토리")
@@ -279,6 +293,17 @@ def main() -> None:
                 n_modes=args.n_modes,
                 surrogate=args.surrogate,
                 validation_count=args.validation_count,
+                as_json=args.as_json,
+            )
+        )
+    elif args.command == "predict-twin":
+        sys.exit(
+            _run_predict_twin(
+                engine_path=args.engine,
+                params=args.params,
+                params_csv=args.params_csv,
+                param_columns=args.param_columns,
+                output=args.output,
                 as_json=args.as_json,
             )
         )
@@ -818,6 +843,111 @@ def _run_build_twin(
             f"rmse={metrics.get('rmse', float('nan')):.6g}"
         )
         print(f"artifacts: {output_dir}")
+    return 0
+
+
+def _load_predict_twin_params(
+    *,
+    params: str | None,
+    params_csv: str | None,
+    param_columns: str | None,
+) -> Any:
+    """predict-twin 입력 파라미터를 numpy 배열로 로드한다."""
+    import numpy as np
+
+    if params is not None:
+        values = _parse_csv_floats(params, label="params")
+        return np.asarray(values, dtype=np.float64)
+
+    if params_csv is None:
+        raise ValueError("--params or --params-csv is required")
+    try:
+        import pandas as pd
+    except ImportError as exc:
+        raise RuntimeError("pandas required to read --params-csv") from exc
+
+    df = pd.read_csv(params_csv)
+    if param_columns:
+        columns = [column.strip() for column in param_columns.split(",") if column.strip()]
+        invalid = sorted(set(columns) - set(map(str, df.columns)))
+        if invalid:
+            raise ValueError(f"unsupported param-columns: {','.join(invalid)}")
+    else:
+        columns = list(df.select_dtypes(include=["number"]).columns)
+    if not columns:
+        raise ValueError("--params-csv must contain at least one numeric column")
+    return df[columns].to_numpy(dtype=np.float64)
+
+
+def _parse_csv_floats(value: str, *, label: str) -> list[float]:
+    """쉼표 구분 문자열을 float 목록으로 변환한다."""
+    parsed: list[float] = []
+    for token in value.split(","):
+        stripped = token.strip()
+        if not stripped:
+            continue
+        try:
+            parsed.append(float(stripped))
+        except ValueError as exc:
+            raise ValueError(f"{label} must be comma-separated floats: {stripped}") from exc
+    if not parsed:
+        raise ValueError(f"{label} must include at least one value")
+    return parsed
+
+
+def _run_predict_twin(
+    *,
+    engine_path: str,
+    params: str | None,
+    params_csv: str | None,
+    param_columns: str | None,
+    output: str | None,
+    as_json: bool,
+) -> int:
+    """저장된 TwinEngine으로 입력 파라미터의 유동장 예측을 수행한다."""
+    try:
+        import numpy as np
+
+        from naviertwin.core.digital_twin.twin_engine import TwinEngine
+
+        engine_file = Path(engine_path).expanduser()
+        engine = TwinEngine.load(engine_file)
+        params_array = _load_predict_twin_params(
+            params=params,
+            params_csv=params_csv,
+            param_columns=param_columns,
+        )
+        prediction = np.asarray(engine.predict(params_array), dtype=np.float64)
+        output_path = Path(output).expanduser() if output else None
+        if output_path is not None:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            matrix = prediction.reshape(-1, 1) if prediction.ndim == 1 else prediction
+            header = ",".join(f"sample_{idx}" for idx in range(matrix.shape[1]))
+            np.savetxt(output_path, matrix, delimiter=",", header=header, comments="")
+
+        preview_array = prediction.reshape(-1)[: min(8, prediction.size)]
+        payload = {
+            "status": "ok",
+            "engine": str(engine_file),
+            "input_shape": list(params_array.shape),
+            "prediction_shape": list(prediction.shape),
+            "output": str(output_path) if output_path is not None else None,
+            "preview": [float(value) for value in preview_array],
+        }
+    except (ImportError, RuntimeError, OSError, ValueError) as exc:
+        print(f"predict-twin error: {exc}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print(
+            "predict-twin 완료: "
+            f"input_shape={payload['input_shape']}, "
+            f"prediction_shape={payload['prediction_shape']}"
+        )
+        if output_path is not None:
+            print(f"output: {output_path}")
     return 0
 
 

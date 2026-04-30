@@ -76,6 +76,17 @@ Expected: loads a CFD reader input or CSV snapshot sequence, trains a
 ``NavierTwinPipeline`` with a validation split, and writes ``metrics.json``,
 ``manifest.json``, ``pipeline.h5``, loadable ``engine.pkl``, and ``report.html``.
 
+predict-twin
+------------
+
+.. code-block:: bash
+
+   naviertwin predict-twin --engine /tmp/naviertwin-twin/engine.pkl --params 0.25 --output /tmp/naviertwin-prediction.csv --json
+
+Expected: loads a saved ``TwinEngine``, evaluates the input parameters, and
+prints prediction shape/preview metadata while optionally writing the predicted
+field matrix to CSV.
+
 preflight
 ---------
 
