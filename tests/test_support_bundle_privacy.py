@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import zipfile
+from hashlib import sha256
 
 
 def _assert_secret_absent(text: str) -> None:
@@ -109,3 +110,21 @@ def test_support_bundle_redacts_sensitive_values(tmp_path, monkeypatch) -> None:
     assert metadata["inputs"]["preflight"] != str(tmp_path / "input_SECRET_TOKEN=secret123.su2")
     assert metadata["inputs"]["acceptance_json"] != str(acceptance_json)
     assert metadata["inputs"]["acceptance_summary"] != str(acceptance_summary)
+    assert metadata["schema_version"] == 2
+    assert metadata["inputs"]["preflight"] == {
+        "provided": True,
+        "suffix": ".su2",
+        "path_sha256": sha256(
+            str(tmp_path / "input_SECRET_TOKEN=secret123.su2").encode("utf-8")
+        ).hexdigest(),
+    }
+    assert metadata["inputs"]["acceptance_json"] == {
+        "provided": True,
+        "suffix": ".json",
+        "path_sha256": sha256(str(acceptance_json).encode("utf-8")).hexdigest(),
+    }
+    assert metadata["inputs"]["acceptance_summary"] == {
+        "provided": True,
+        "suffix": ".md",
+        "path_sha256": sha256(str(acceptance_summary).encode("utf-8")).hexdigest(),
+    }

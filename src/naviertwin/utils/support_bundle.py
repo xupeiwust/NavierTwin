@@ -56,6 +56,18 @@ def _final_status(statuses: list[str]) -> str:
     return "ok"
 
 
+def _input_reference(path: str | Path | None) -> dict[str, Any]:
+    if path is None:
+        return {"provided": False}
+    path_text = str(Path(path))
+    suffix = Path(path).suffix.lower()
+    return {
+        "provided": True,
+        "suffix": suffix or None,
+        "path_sha256": sha256(path_text.encode("utf-8")).hexdigest(),
+    }
+
+
 def _support_bundle_readme(metadata: dict[str, Any]) -> str:
     files = metadata.get("files", [])
     inputs = metadata.get("inputs", {})
@@ -93,6 +105,15 @@ def _support_bundle_readme(metadata: dict[str, Any]) -> str:
     if isinstance(inputs, dict):
         for key in sorted(inputs):
             value = inputs[key]
+            if key == "include_optional":
+                lines.append(f"- `{key}`: {bool(value)}")
+                continue
+            if isinstance(value, dict) and "provided" in value:
+                status = "provided" if value.get("provided") else "not provided"
+                suffix = value.get("suffix")
+                suffix_text = f" ({suffix})" if suffix else ""
+                lines.append(f"- `{key}`: {status}{suffix_text}")
+                continue
             status = "not provided" if value is None else "provided"
             lines.append(f"- `{key}`: {status}")
     lines.extend(["", "## Warnings", ""])
@@ -192,19 +213,16 @@ def build_support_bundle(
     files = [*written_files, "README.txt", "metadata.json"]
     metadata: dict[str, Any] = {
         "status": _final_status(statuses),
+        "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "version": __version__,
         "files": files,
         "artifacts": artifacts,
         "inputs": {
-            "preflight": None if preflight is None else str(Path(preflight)),
+            "preflight": _input_reference(preflight),
             "include_optional": include_optional,
-            "acceptance_json": (
-                None if acceptance_json is None else str(Path(acceptance_json))
-            ),
-            "acceptance_summary": (
-                None if acceptance_summary is None else str(Path(acceptance_summary))
-            ),
+            "acceptance_json": _input_reference(acceptance_json),
+            "acceptance_summary": _input_reference(acceptance_summary),
         },
         "warnings": warnings,
         "errors": errors,

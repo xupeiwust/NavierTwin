@@ -14,6 +14,10 @@ def _file_sha256(path: Path) -> str:
     return sha256(path.read_bytes()).hexdigest()
 
 
+def _path_sha256(path: Path) -> str:
+    return sha256(str(path).encode("utf-8")).hexdigest()
+
+
 def test_support_bundle_parser_accepts_customer_flags() -> None:
     from naviertwin.main import _build_parser
 
@@ -121,6 +125,7 @@ def test_build_support_bundle_writes_doctor_and_metadata(
     assert doctor_payload["status"] == "ok"
     assert metadata == metadata_payload
     assert metadata["status"] == "ok"
+    assert metadata["schema_version"] == 2
     assert metadata["version"]
     assert metadata["generated_at"]
     assert metadata["files"] == ["doctor.json", "README.txt", "metadata.json"]
@@ -136,10 +141,10 @@ def test_build_support_bundle_writes_doctor_and_metadata(
         encoding="utf-8"
     )
     assert metadata["inputs"] == {
-        "preflight": None,
+        "preflight": {"provided": False},
         "include_optional": True,
-        "acceptance_json": None,
-        "acceptance_summary": None,
+        "acceptance_json": {"provided": False},
+        "acceptance_summary": {"provided": False},
     }
     assert metadata["warnings"] == []
     assert metadata["errors"] == []
@@ -164,7 +169,12 @@ def test_build_support_bundle_writes_preflight_report_when_available(tmp_path) -
     assert metadata == metadata_payload
     assert metadata["files"] == ["doctor.json", "preflight.json", "README.txt", "metadata.json"]
     assert set(metadata["artifacts"]) == {"doctor.json", "preflight.json", "README.txt"}
-    assert metadata["inputs"]["preflight"] == str(fixture)
+    assert metadata["schema_version"] == 2
+    assert metadata["inputs"]["preflight"] == {
+        "provided": True,
+        "suffix": ".su2",
+        "path_sha256": _path_sha256(fixture),
+    }
 
 
 def test_build_support_bundle_records_integrity_manifest(
@@ -297,8 +307,21 @@ def test_build_support_bundle_includes_acceptance_artifacts(
         "acceptance.md",
         "README.txt",
     }
-    assert metadata["inputs"]["acceptance_json"] == str(acceptance_json)
-    assert metadata["inputs"]["acceptance_summary"] == str(acceptance_summary)
+    assert metadata["inputs"]["acceptance_json"] == {
+        "provided": True,
+        "suffix": ".json",
+        "path_sha256": _path_sha256(acceptance_json),
+    }
+    assert metadata["inputs"]["acceptance_summary"] == {
+        "provided": True,
+        "suffix": ".md",
+        "path_sha256": _path_sha256(acceptance_summary),
+    }
+    assert str(acceptance_json) not in json.dumps(
+        metadata["inputs"],
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     readme = (outdir / "README.txt").read_text(encoding="utf-8")
     assert "`acceptance.md`" in readme
     assert "human-readable handoff verdict" in readme
