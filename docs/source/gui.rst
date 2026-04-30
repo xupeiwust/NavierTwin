@@ -44,6 +44,8 @@ GUI 사용법
 
 - **벤치마크 실행** — Burgers benchmark smoke를 GUI에서 실행
 - **파이프라인 데모 실행** — 합성 end-to-end 데모 산출물과 HTML 보고서 생성
+- **CSV 스냅샷으로 트윈 생성** — CSV 시퀀스에서 ``engine.pkl``/metrics/report 산출물 생성 후 Twin/Export 패널에 자동 연결
+- **저장된 트윈 예측** — ``engine.pkl`` 과 쉼표 구분 파라미터로 예측을 실행하고 CSV로 저장
 - **API 서버 시작/중지** — FastAPI 서버를 GUI 백그라운드 프로세스로 관리
 
 언어 전환
