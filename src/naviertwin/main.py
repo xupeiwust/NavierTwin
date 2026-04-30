@@ -224,6 +224,22 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="선택적 validate-twin JSON 리포트 경로",
     )
+    p_package.add_argument("--max-mean-ms", type=float, default=None, help="delivery SLO 최대 mean latency(ms)")
+    p_package.add_argument("--max-p50-ms", type=float, default=None, help="delivery SLO 최대 p50 latency(ms)")
+    p_package.add_argument("--max-p95-ms", type=float, default=100.0, help="delivery SLO 최대 p95 latency(ms)")
+    p_package.add_argument("--max-p99-ms", type=float, default=None, help="delivery SLO 최대 p99 latency(ms)")
+    p_package.add_argument(
+        "--min-throughput-hz",
+        type=float,
+        default=10.0,
+        help="delivery SLO 최소 예측 처리량(Hz)",
+    )
+    p_package.add_argument(
+        "--no-latency-slo",
+        action="store_true",
+        default=False,
+        help="delivery.json에 latency SLO 정책을 기록하지 않음",
+    )
     p_package.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
 
     # verify-twin-package
@@ -496,6 +512,12 @@ def main() -> None:
                 artifacts_dir=args.artifacts_dir,
                 output=args.output,
                 include_validation=args.include_validation,
+                max_mean_ms=args.max_mean_ms,
+                max_p50_ms=args.max_p50_ms,
+                max_p95_ms=args.max_p95_ms,
+                max_p99_ms=args.max_p99_ms,
+                min_throughput_hz=args.min_throughput_hz,
+                no_latency_slo=args.no_latency_slo,
                 as_json=args.as_json,
             )
         )
@@ -1671,6 +1693,12 @@ def _run_package_twin(
     artifacts_dir: str,
     output: str,
     include_validation: str | None,
+    max_mean_ms: float | None = None,
+    max_p50_ms: float | None = None,
+    max_p95_ms: float | None = 100.0,
+    max_p99_ms: float | None = None,
+    min_throughput_hz: float | None = 10.0,
+    no_latency_slo: bool = False,
     as_json: bool,
 ) -> int:
     """build-twin 산출물을 무결성 manifest가 포함된 ZIP으로 패키징한다."""
@@ -1685,10 +1713,21 @@ def _run_package_twin(
         files = _collect_twin_package_artifacts(root, include_validation=include_validation)
         output_path = Path(output).expanduser()
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        latency_slo = None
+        if not no_latency_slo:
+            latency_slo = _build_latency_slo_policy(
+                max_mean_ms=max_mean_ms,
+                max_p50_ms=max_p50_ms,
+                max_p95_ms=max_p95_ms,
+                max_p99_ms=max_p99_ms,
+                min_throughput_hz=min_throughput_hz,
+                source="package-twin",
+            )
         delivery_entries = _build_twin_delivery_entries(
             root,
             files=files,
             source_integrity=source_integrity,
+            latency_slo=latency_slo,
         )
         zip_artifacts(files, output_path, extra_entries=delivery_entries)
         zip_manifest = read_manifest(output_path)
@@ -1699,6 +1738,7 @@ def _run_package_twin(
             "files": [path.name for path in files],
             "generated_entries": list(delivery_entries),
             "source_integrity": source_integrity,
+            "latency_slo": latency_slo,
             "manifest_entries": zip_manifest,
         }
     except (ImportError, RuntimeError, OSError, ValueError, KeyError) as exc:
@@ -1720,6 +1760,7 @@ def _build_twin_delivery_entries(
     *,
     files: list[Path],
     source_integrity: dict[str, Any],
+    latency_slo: dict[str, Any] | None,
 ) -> dict[str, str]:
     """고객 전달 ZIP 내부에 생성할 안내/요약 파일을 만든다."""
     manifest_path = root / "manifest.json"
@@ -1731,29 +1772,34 @@ def _build_twin_delivery_entries(
     if not isinstance(parameter_contract, dict):
         parameter_contract = None
     parameter_input_args = _parameter_input_args_from_contract(parameter_contract)
-    predict_command = (
-        f"naviertwin predict-twin --artifacts-dir <extracted-dir> {parameter_input_args} "
-        "--output prediction.csv --json"
+    latency_slo_args = _latency_slo_command_args(latency_slo)
+    predict_command = _command_with_parts(
+        "naviertwin predict-twin --artifacts-dir <extracted-dir>",
+        parameter_input_args,
+        "--output prediction.csv --json",
     )
-    benchmark_command = (
-        f"naviertwin benchmark-twin --artifacts-dir <extracted-dir> {parameter_input_args} "
-        "--warmup 2 --repeat 20 --max-p95-ms 100 --min-throughput-hz 10 "
-        "--output latency.json --json"
+    benchmark_command = _command_with_parts(
+        "naviertwin benchmark-twin --artifacts-dir <extracted-dir>",
+        parameter_input_args,
+        "--warmup 2 --repeat 20",
+        latency_slo_args,
+        "--output latency.json --json",
     )
-    validate_command = (
+    validate_command = _command_with_parts(
         "naviertwin validate-twin --artifacts-dir <extracted-dir> "
         '--csv-snapshots "case/validation/*.csv" '
         "--field-column U --max-rmse 0.05 --min-r2 0.98 "
         "--output validation.json --json"
     )
-    verify_command = (
+    verify_command = _command_with_parts(
         "naviertwin verify-twin-package --package naviertwin-twin.zip "
         "--extract-to ./naviertwin-twin --json"
     )
-    accept_command = (
-        "naviertwin accept-twin-package --package naviertwin-twin.zip "
-        "--extract-to ./naviertwin-twin --max-p95-ms 100 --min-throughput-hz 10 "
-        "--output acceptance.json --json"
+    accept_command = _command_with_parts(
+        "naviertwin accept-twin-package --package naviertwin-twin.zip",
+        "--extract-to ./naviertwin-twin",
+        latency_slo_args,
+        "--output acceptance.json --json",
     )
     sample_params_csv = _sample_params_csv_from_contract(parameter_contract)
     generated_entries = ["README.txt", "delivery.json"]
@@ -1767,6 +1813,7 @@ def _build_twin_delivery_entries(
         "generated_entries": generated_entries,
         "source_integrity": source_integrity,
         "parameter_contract": parameter_contract,
+        "latency_slo": latency_slo,
         "build_manifest": {
             "config": manifest.get("config", {}),
             "metrics": manifest.get("metrics", {}),
@@ -1809,6 +1856,7 @@ def _build_twin_delivery_entries(
             f"- names: {', '.join(map(str, parameter_contract.get('names', []))) or '-'}",
             *range_lines,
         ]
+    slo_lines = _latency_slo_readme_lines(latency_slo)
     readme = "\n".join(
         [
             "NavierTwin Digital Twin Delivery Package",
@@ -1823,6 +1871,8 @@ def _build_twin_delivery_entries(
             "- sample_params.csv: generated example input parameters for this twin",
             "",
             *contract_lines,
+            "",
+            *slo_lines,
             "",
             "Recommended checks:",
             "1. Run the one-command delivery acceptance smoke:",
@@ -1848,6 +1898,140 @@ def _build_twin_delivery_entries(
     if sample_params_csv is not None:
         entries["sample_params.csv"] = sample_params_csv
     return entries
+
+
+def _command_with_parts(*parts: str | None) -> str:
+    """비어 있지 않은 CLI 조각만 공백 하나로 이어 붙인다."""
+    return " ".join(part.strip() for part in parts if part and part.strip())
+
+
+def _build_latency_slo_policy(
+    *,
+    max_mean_ms: float | None,
+    max_p50_ms: float | None,
+    max_p95_ms: float | None,
+    max_p99_ms: float | None,
+    min_throughput_hz: float | None,
+    source: str,
+) -> dict[str, Any] | None:
+    """delivery metadata에 기록할 latency SLO 정책을 만든다."""
+    thresholds = {
+        key: float(value)
+        for key, value in {
+            "max_mean_ms": max_mean_ms,
+            "max_p50_ms": max_p50_ms,
+            "max_p95_ms": max_p95_ms,
+            "max_p99_ms": max_p99_ms,
+            "min_throughput_hz": min_throughput_hz,
+        }.items()
+        if value is not None
+    }
+    if not thresholds:
+        return None
+    return {
+        "schema": "naviertwin-latency-slo-v1",
+        "source": source,
+        "thresholds": thresholds,
+    }
+
+
+def _latency_slo_command_args(policy: dict[str, Any] | None) -> str:
+    """latency SLO 정책을 benchmark/accept CLI 인자로 직렬화한다."""
+    if not isinstance(policy, dict):
+        return ""
+    thresholds = policy.get("thresholds")
+    if not isinstance(thresholds, dict):
+        return ""
+    flag_map = [
+        ("max_mean_ms", "--max-mean-ms"),
+        ("max_p50_ms", "--max-p50-ms"),
+        ("max_p95_ms", "--max-p95-ms"),
+        ("max_p99_ms", "--max-p99-ms"),
+        ("min_throughput_hz", "--min-throughput-hz"),
+    ]
+    args: list[str] = []
+    for key, flag in flag_map:
+        if key not in thresholds:
+            continue
+        args.extend([flag, f"{float(thresholds[key]):.12g}"])
+    return " ".join(args)
+
+
+def _latency_slo_readme_lines(policy: dict[str, Any] | None) -> list[str]:
+    """delivery README에 넣을 latency SLO 설명을 만든다."""
+    if not isinstance(policy, dict):
+        return [
+            "Recommended latency SLO:",
+            "- not specified; pass benchmark/accept thresholds explicitly",
+        ]
+    thresholds = policy.get("thresholds")
+    if not isinstance(thresholds, dict) or not thresholds:
+        return [
+            "Recommended latency SLO:",
+            "- not specified; pass benchmark/accept thresholds explicitly",
+        ]
+    label_map = {
+        "max_mean_ms": "mean latency <=",
+        "max_p50_ms": "p50 latency <=",
+        "max_p95_ms": "p95 latency <=",
+        "max_p99_ms": "p99 latency <=",
+        "min_throughput_hz": "throughput >=",
+    }
+    lines = ["Recommended latency SLO:"]
+    for key in label_map:
+        if key not in thresholds:
+            continue
+        unit = "Hz" if key == "min_throughput_hz" else "ms"
+        lines.append(f"- {label_map[key]} {float(thresholds[key]):.12g} {unit}")
+    return lines
+
+
+def _latency_slo_thresholds(policy: dict[str, Any] | None) -> dict[str, float | None]:
+    """latency SLO 정책에서 benchmark gate 임계값만 추출한다."""
+    values: dict[str, float | None] = {
+        "max_mean_ms": None,
+        "max_p50_ms": None,
+        "max_p95_ms": None,
+        "max_p99_ms": None,
+        "min_throughput_hz": None,
+    }
+    if not isinstance(policy, dict):
+        return values
+    thresholds = policy.get("thresholds")
+    if not isinstance(thresholds, dict):
+        return values
+    for key in values:
+        if key not in thresholds:
+            continue
+        try:
+            values[key] = float(thresholds[key])
+        except (TypeError, ValueError):
+            continue
+    return values
+
+
+def _merge_latency_slo_policy(
+    policy: dict[str, Any] | None,
+    *,
+    max_mean_ms: float | None,
+    max_p50_ms: float | None,
+    max_p95_ms: float | None,
+    max_p99_ms: float | None,
+    min_throughput_hz: float | None,
+) -> dict[str, float | None]:
+    """패키지 latency SLO 기본값에 명시 CLI 임계값을 덮어쓴다."""
+    thresholds = _latency_slo_thresholds(policy)
+    overrides = {
+        "max_mean_ms": max_mean_ms,
+        "max_p50_ms": max_p50_ms,
+        "max_p95_ms": max_p95_ms,
+        "max_p99_ms": max_p99_ms,
+        "min_throughput_hz": min_throughput_hz,
+    }
+    for key, value in overrides.items():
+        if value is not None:
+            thresholds[key] = float(value)
+    return thresholds
 
 
 def _parameter_input_args_from_contract(contract: dict[str, Any] | None) -> str:
@@ -2132,6 +2316,17 @@ def _accept_twin_package_archive(
 
     verification = _verify_twin_package_archive(package_path)
     inspection = _inspect_twin_package_archive(package_path)
+    package_latency_slo = inspection.get("latency_slo")
+    if not isinstance(package_latency_slo, dict):
+        package_latency_slo = None
+    effective_latency_slo = _merge_latency_slo_policy(
+        package_latency_slo,
+        max_mean_ms=max_mean_ms,
+        max_p50_ms=max_p50_ms,
+        max_p95_ms=max_p95_ms,
+        max_p99_ms=max_p99_ms,
+        min_throughput_hz=min_throughput_hz,
+    )
     package_passed = verification["status"] == "ok" and inspection["status"] == "ok"
     payload: dict[str, Any] = {
         "status": "failed",
@@ -2140,6 +2335,10 @@ def _accept_twin_package_archive(
         "temporary_extraction": temporary_extraction,
         "verification": verification,
         "inspection": inspection,
+        "latency_slo": {
+            "package": package_latency_slo,
+            "effective": effective_latency_slo,
+        },
         "parameter_input": None,
         "prediction": None,
         "benchmark": None,
@@ -2233,11 +2432,11 @@ def _accept_twin_package_archive(
         benchmark_acceptance = _benchmark_twin_acceptance(
             latency,
             throughput_hz=throughput_hz,
-            max_mean_ms=max_mean_ms,
-            max_p50_ms=max_p50_ms,
-            max_p95_ms=max_p95_ms,
-            max_p99_ms=max_p99_ms,
-            min_throughput_hz=min_throughput_hz,
+            max_mean_ms=effective_latency_slo.get("max_mean_ms"),
+            max_p50_ms=effective_latency_slo.get("max_p50_ms"),
+            max_p95_ms=effective_latency_slo.get("max_p95_ms"),
+            max_p99_ms=effective_latency_slo.get("max_p99_ms"),
+            min_throughput_hz=effective_latency_slo.get("min_throughput_hz"),
         )
         payload["benchmark"] = {
             "skipped": False,
@@ -2497,6 +2696,10 @@ def _inspect_twin_package_archive(package_path: Path) -> dict[str, Any]:
     parameter_contract = manifest_contract
     if parameter_contract is None and isinstance(delivery_contract, dict):
         parameter_contract = delivery_contract
+    latency_slo = delivery.get("latency_slo") if delivery else None
+    if latency_slo is not None and not isinstance(latency_slo, dict):
+        errors.append("delivery.json latency_slo must contain an object")
+        latency_slo = None
     commands = delivery.get("commands", {}) if delivery else {}
     files = delivery.get("files", []) if delivery else []
     generated_entries = delivery.get("generated_entries", []) if delivery else []
@@ -2514,6 +2717,7 @@ def _inspect_twin_package_archive(package_path: Path) -> dict[str, Any]:
         "metrics": metrics if isinstance(metrics, dict) else {},
         "config": config if isinstance(config, dict) else {},
         "parameter_contract": parameter_contract,
+        "latency_slo": latency_slo,
         "validation_included": "validation.json" in names,
         "readme_present": "README.txt" in names,
         "verification": verification,

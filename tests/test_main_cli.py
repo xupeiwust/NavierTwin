@@ -239,6 +239,8 @@ class TestBuildParser:
         assert args.command == "package-twin"
         assert args.artifacts_dir.endswith("twin")
         assert args.output.endswith("twin.zip")
+        assert args.max_p95_ms == 100.0
+        assert args.min_throughput_hz == 10.0
         assert args.as_json is True
 
     def test_parse_verify_twin_package_subcommand(self, tmp_path) -> None:
@@ -612,6 +614,10 @@ class TestRunBuildTwin:
         assert package_payload["status"] == "ok"
         assert package_payload["source_integrity"]["configured"] is True
         assert package_payload["source_integrity"]["passed"] is True
+        assert package_payload["latency_slo"]["thresholds"] == {
+            "max_p95_ms": 100.0,
+            "min_throughput_hz": 10.0,
+        }
         assert "engine.pkl" in package_payload["files"]
         assert "validation.json" in package_payload["files"]
         assert package_payload["generated_entries"] == [
@@ -637,6 +643,9 @@ class TestRunBuildTwin:
         assert "--params-csv <extracted-dir>/sample_params.csv" in delivery["commands"]["predict"]
         assert "--param-columns normalized_index" in delivery["commands"]["benchmark"]
         assert "--min-throughput-hz" in delivery["commands"]["benchmark"]
+        assert "--min-throughput-hz 10" in delivery["commands"]["accept_package"]
+        assert delivery["latency_slo"]["thresholds"]["max_p95_ms"] == 100.0
+        assert delivery["latency_slo"]["thresholds"]["min_throughput_hz"] == 10.0
         assert sample_params == "normalized_index\n0.5\n"
         assert delivery["parameter_contract"] == contract
 
@@ -655,6 +664,7 @@ class TestRunBuildTwin:
         assert inspect_payload["verification"]["status"] == "ok"
         assert "rmse" in inspect_payload["metrics"]
         assert inspect_payload["parameter_contract"] == contract
+        assert inspect_payload["latency_slo"]["thresholds"]["max_p95_ms"] == 100.0
 
         verify_code = _run_verify_twin_package(
             package_path=str(tmp_path / "twin-delivery.zip"),
@@ -671,6 +681,29 @@ class TestRunBuildTwin:
         assert not verify_payload["errors"]
         assert (tmp_path / "deployed-twin" / "engine.pkl").exists()
         assert (tmp_path / "deployed-twin" / "README.txt").exists()
+
+        policy_accept_code = _run_accept_twin_package(
+            package_path=str(tmp_path / "twin-delivery.zip"),
+            extract_to=str(tmp_path / "accepted-twin-policy"),
+            prediction_output=None,
+            warmup=0,
+            repeat=2,
+            max_mean_ms=None,
+            max_p50_ms=None,
+            max_p95_ms=None,
+            max_p99_ms=None,
+            min_throughput_hz=None,
+            skip_benchmark=False,
+            output=None,
+            as_json=True,
+        )
+        policy_accept_payload = json.loads(capsys.readouterr().out)
+
+        assert policy_accept_code == 0
+        assert policy_accept_payload["latency_slo"]["package"]["thresholds"]["max_p95_ms"] == 100.0
+        assert policy_accept_payload["latency_slo"]["effective"]["max_p95_ms"] == 100.0
+        assert policy_accept_payload["latency_slo"]["effective"]["min_throughput_hz"] == 10.0
+        assert policy_accept_payload["benchmark"]["acceptance"]["configured"] is True
 
         accept_code = _run_accept_twin_package(
             package_path=str(tmp_path / "twin-delivery.zip"),
@@ -702,6 +735,8 @@ class TestRunBuildTwin:
         assert accept_payload["benchmark"]["repeat"] == 2
         assert len(accept_payload["benchmark"]["samples_ms"]) == 2
         assert accept_payload["benchmark"]["acceptance"]["configured"] is True
+        assert accept_payload["latency_slo"]["effective"]["max_p95_ms"] == 100000.0
+        assert accept_payload["latency_slo"]["effective"]["min_throughput_hz"] == 0.0001
         assert (tmp_path / "accepted-twin" / "engine.pkl").exists()
         assert (tmp_path / "accept-prediction.csv").exists()
         assert (tmp_path / "acceptance.json").exists()
@@ -729,6 +764,40 @@ class TestRunBuildTwin:
         assert gated_accept_payload["acceptance"]["prediction"] is True
         assert gated_accept_payload["acceptance"]["benchmark"] is False
         assert gated_accept_payload["benchmark"]["acceptance"]["checks"][0]["metric"] == "latency_ms.mean"
+
+        no_slo_package_code = _run_package_twin(
+            artifacts_dir=str(tmp_path / "twin"),
+            include_validation=None,
+            output=str(tmp_path / "twin-no-slo.zip"),
+            no_latency_slo=True,
+            as_json=True,
+        )
+        no_slo_package_payload = json.loads(capsys.readouterr().out)
+
+        assert no_slo_package_code == 0
+        assert no_slo_package_payload["latency_slo"] is None
+
+        no_slo_accept_code = _run_accept_twin_package(
+            package_path=str(tmp_path / "twin-no-slo.zip"),
+            extract_to=str(tmp_path / "accepted-twin-no-slo"),
+            prediction_output=None,
+            warmup=0,
+            repeat=1,
+            max_mean_ms=None,
+            max_p50_ms=None,
+            max_p95_ms=None,
+            max_p99_ms=None,
+            min_throughput_hz=None,
+            skip_benchmark=False,
+            output=None,
+            as_json=True,
+        )
+        no_slo_accept_payload = json.loads(capsys.readouterr().out)
+
+        assert no_slo_accept_code == 0
+        assert no_slo_accept_payload["latency_slo"]["package"] is None
+        assert no_slo_accept_payload["latency_slo"]["effective"]["max_p95_ms"] is None
+        assert no_slo_accept_payload["benchmark"]["acceptance"]["configured"] is False
 
         deployed_predict_code = _run_predict_twin(
             engine_path=None,

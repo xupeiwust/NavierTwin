@@ -126,7 +126,7 @@ package-twin
 
 .. code-block:: bash
 
-   naviertwin package-twin --artifacts-dir /tmp/naviertwin-twin --include-validation /tmp/naviertwin-validation.json --output /tmp/naviertwin-twin.zip --json
+   naviertwin package-twin --artifacts-dir /tmp/naviertwin-twin --include-validation /tmp/naviertwin-validation.json --output /tmp/naviertwin-twin.zip --max-p95-ms 100 --min-throughput-hz 10 --json
 
 Expected: packages ``engine.pkl``, ``manifest.json``, ``metrics.json``,
 ``pipeline.h5``, ``report.html``, and optional validation JSON into a delivery
@@ -139,6 +139,10 @@ parameter contract so recipients can inspect expected input names/ranges without
 loading Python code. When a contract with names is available, the ZIP includes
 ``sample_params.csv`` and README/delivery commands use ``--params-csv`` plus
 ``--param-columns`` so multi-parameter twins have copy-pasteable inputs.
+``delivery.json`` also records an optional ``latency_slo`` policy. The default
+package command writes p95 <= 100 ms and throughput >= 10 Hz unless
+``--no-latency-slo`` is used; explicit packaging flags can override those
+handoff criteria.
 
 inspect-twin-package
 --------------------
@@ -172,16 +176,20 @@ accept-twin-package
 
 .. code-block:: bash
 
-   naviertwin accept-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-accepted --max-p95-ms 100 --min-throughput-hz 10 --output /tmp/naviertwin-acceptance.json --json
+   naviertwin accept-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-accepted --output /tmp/naviertwin-acceptance.json --json
 
 Expected: runs the customer handoff acceptance smoke in one command. It verifies
 ``MANIFEST.json`` integrity, safely extracts the ZIP, inspects delivery
 metadata, loads ``sample_params.csv`` or a contract-derived example input, runs
 a sample prediction, then benchmarks prediction latency with the configured SLO
-thresholds. Package or prediction failures exit 1, SLO misses also exit 1, and
-runtime/setup errors exit 2. The JSON report contains ``verification``,
-``inspection``, ``prediction``, ``benchmark``, and top-level ``acceptance``
-blocks that can be attached to customer delivery records.
+thresholds. If ``delivery.json`` contains ``latency_slo``, those thresholds are
+used by default; explicit ``--max-*`` or ``--min-throughput-hz`` flags override
+package policy. Older packages without policy remain valid and only gate
+latency when thresholds are passed on the CLI. Package or prediction failures
+exit 1, SLO misses also exit 1, and runtime/setup errors exit 2. The JSON report
+contains ``verification``, ``inspection``, ``prediction``, ``benchmark``, and
+top-level ``acceptance`` blocks that can be attached to customer delivery
+records.
 
 preflight
 ---------

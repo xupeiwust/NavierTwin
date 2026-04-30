@@ -76,7 +76,7 @@ artifact에 ``parameter_contract`` 가 있으면 예측 전에 입력 차원을 
 
 .. code-block:: bash
 
-   naviertwin package-twin --artifacts-dir /tmp/naviertwin-twin --include-validation /tmp/naviertwin-validation.json --output /tmp/naviertwin-twin.zip --json
+   naviertwin package-twin --artifacts-dir /tmp/naviertwin-twin --include-validation /tmp/naviertwin-validation.json --output /tmp/naviertwin-twin.zip --max-p95-ms 100 --min-throughput-hz 10 --json
 
 기대 결과: 트윈 산출물과 validation report를 하나의 ZIP으로 묶고, ZIP 내부
 ``README.txt`` 에 고객 실행 안내를, ``delivery.json`` 에 기계 판독용 메타데이터를,
@@ -84,6 +84,8 @@ artifact에 ``parameter_contract`` 가 있으면 예측 전에 입력 차원을 
 고객이 예상 입력 파라미터를 확인할 수 있도록 ``parameter_contract`` 도 포함됩니다.
 contract에 파라미터 이름이 있으면 ``sample_params.csv`` 도 함께 생성되어
 README/delivery 명령이 다차원 입력에서도 그대로 실행됩니다.
+``latency_slo`` 정책도 함께 기록되어 고객 수락 검사에서 기본 성능 기준으로
+사용됩니다. 기준을 넣고 싶지 않으면 ``--no-latency-slo`` 를 사용합니다.
 
 8. 전달 ZIP 구성 조회
 ---------------------
@@ -111,12 +113,14 @@ validation 포함 여부, README/delivery metadata 존재 여부와 ``parameter_
 
 .. code-block:: bash
 
-   naviertwin accept-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-accepted --max-p95-ms 100 --min-throughput-hz 10 --output /tmp/naviertwin-acceptance.json --json
+   naviertwin accept-twin-package --package /tmp/naviertwin-twin.zip --extract-to /tmp/naviertwin-accepted --output /tmp/naviertwin-acceptance.json --json
 
 기대 결과: 고객이 받은 ZIP 하나로 무결성 검증, 안전 추출, delivery metadata
 조회, ``sample_params.csv`` 기반 샘플 예측, latency SLO 측정을 한 번에 수행합니다.
-``--max-p95-ms`` 또는 ``--min-throughput-hz`` 같은 threshold가 실패하면 종료 코드
-1로 실패하므로 납품 승인 acceptance gate에 바로 연결할 수 있습니다.
+``delivery.json`` 의 ``latency_slo`` 가 기본 기준으로 적용되고, 필요하면
+``--max-p95-ms`` 또는 ``--min-throughput-hz`` 같은 CLI threshold로 override할 수
+있습니다. 기준이 실패하면 종료 코드 1로 실패하므로 납품 승인 acceptance gate에
+바로 연결할 수 있습니다.
 
 GUI 대응 흐름
 -------------

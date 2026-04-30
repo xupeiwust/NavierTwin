@@ -222,6 +222,8 @@ class TestCLISubcommands:
 
         package_payload = json.loads(package_result.stdout)
         assert package_payload["status"] == "ok"
+        assert package_payload["latency_slo"]["thresholds"]["max_p95_ms"] == 100.0
+        assert package_payload["latency_slo"]["thresholds"]["min_throughput_hz"] == 10.0
         assert "engine.pkl" in package_payload["files"]
         assert "validation.json" in package_payload["files"]
         assert package_payload["generated_entries"] == [
@@ -256,6 +258,7 @@ class TestCLISubcommands:
         assert inspect_payload["delivery_metadata_present"] is True
         assert inspect_payload["format"] == "NavierTwin delivery package"
         assert inspect_payload["parameter_contract"]["dim"] == 1
+        assert inspect_payload["latency_slo"]["thresholds"]["max_p95_ms"] == 100.0
         assert inspect_payload["verification"]["status"] == "ok"
 
         accept_package_result = subprocess.run(
@@ -274,10 +277,6 @@ class TestCLISubcommands:
                 "0",
                 "--repeat",
                 "2",
-                "--max-p95-ms",
-                "100000",
-                "--min-throughput-hz",
-                "0.0001",
                 "--output",
                 str(tmp_path / "acceptance.json"),
                 "--json",
@@ -295,6 +294,8 @@ class TestCLISubcommands:
         assert accept_payload["inspection"]["parameter_contract"]["dim"] == 1
         assert accept_payload["parameter_input"]["source"] == "sample_params.csv"
         assert accept_payload["prediction"]["parameter_check"]["available"] is True
+        assert accept_payload["latency_slo"]["effective"]["max_p95_ms"] == 100.0
+        assert accept_payload["latency_slo"]["effective"]["min_throughput_hz"] == 10.0
         assert accept_payload["benchmark"]["repeat"] == 2
         assert len(accept_payload["benchmark"]["samples_ms"]) == 2
         assert (tmp_path / "accepted-twin" / "engine.pkl").exists()
