@@ -7,7 +7,7 @@
     - POST /reduce/pod                     : POD 전용(하위 호환)
     - POST /preflight                      : CFD 입력 readiness 점검
     - POST /twin/build                     : CFD/CSV dataset → TwinEngine 산출물 생성
-    - POST /twin/predict                   : 저장/배포된 TwinEngine 예측
+    - POST /twin/predict                   : 저장/배포된 TwinEngine 예측/파일 출력
     - POST /twin/benchmark                 : TwinEngine 예측 latency/SLO 측정
     - POST /twin/package                   : TwinEngine 산출물 → 전달 ZIP 패키징
     - POST /twin/package/inspect           : 전달 ZIP 구성/메타데이터 조회
@@ -83,6 +83,9 @@ if _HAS_FASTAPI:
         artifacts_dir: Optional[str] = None
         params: Any
         preview_limit: int = 8
+        return_prediction: bool = True
+        output_path: Optional[str] = None
+        output_format: str = "csv"
 
     class TwinBenchmarkReq(BaseModel):
         engine_path: Optional[str] = None
@@ -264,9 +267,41 @@ def create_app() -> Any:
 
         return payload
 
+    def _write_prediction_output(
+        prediction: np.ndarray,
+        *,
+        output_path: Optional[str],
+        output_format: str,
+    ) -> tuple[str | None, str | None]:
+        from pathlib import Path
+
+        normalized_format = output_format.lower()
+        if normalized_format not in {"csv", "npy"}:
+            raise ValueError(
+                f"unsupported output_format: {output_format}. supported: csv, npy"
+            )
+        if output_path is None:
+            return None, None
+
+        target = Path(output_path).expanduser()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if normalized_format == "csv":
+            matrix = prediction.reshape(-1, 1) if prediction.ndim == 1 else prediction
+            if matrix.ndim != 2:
+                raise ValueError(
+                    f"csv output requires 1D or 2D prediction, got shape {prediction.shape}"
+                )
+            header = ",".join(f"sample_{idx}" for idx in range(matrix.shape[1]))
+            np.savetxt(target, matrix, delimiter=",", header=header, comments="")
+        else:
+            with target.open("wb") as handle:
+                np.save(handle, prediction)
+        return str(target), normalized_format
+
     @app.post("/twin/predict")
     def twin_predict(req: TwinPredictReq = Body(...)) -> dict[str, Any]:
         import pickle
+        from time import perf_counter
 
         from naviertwin.core.digital_twin.twin_engine import TwinEngine
         from naviertwin.main import (
@@ -286,7 +321,14 @@ def create_app() -> Any:
                 raise ValueError(f"params must be 1D or 2D, got shape {params.shape}")
             parameter_contract = _load_twin_parameter_contract(engine_file)
             parameter_check = _check_twin_parameter_contract(params, parameter_contract)
+            started_at = perf_counter()
             prediction = np.asarray(engine.predict(params), dtype=np.float64)
+            latency_ms = (perf_counter() - started_at) * 1000.0
+            output_path, output_format = _write_prediction_output(
+                prediction,
+                output_path=req.output_path,
+                output_format=req.output_format,
+            )
         except (
             AttributeError,
             EOFError,
@@ -300,17 +342,25 @@ def create_app() -> Any:
             raise fastapi.HTTPException(status_code=400, detail=str(exc)) from exc
 
         preview = prediction.reshape(-1)[: max(0, req.preview_limit)]
-        return {
+        payload = {
             "status": "ok",
             "engine": str(engine_file),
             "artifacts_dir": req.artifacts_dir,
             "input_shape": list(params.shape),
             "prediction_shape": list(prediction.shape),
+            "prediction_size": int(prediction.size),
+            "prediction_bytes": int(prediction.nbytes),
+            "prediction_returned": bool(req.return_prediction),
+            "latency_ms": float(latency_ms),
+            "output_path": output_path,
+            "output_format": output_format,
             "parameter_contract": parameter_contract,
             "parameter_check": parameter_check,
             "preview": [float(value) for value in preview],
-            "prediction": prediction.tolist(),
         }
+        if req.return_prediction:
+            payload["prediction"] = prediction.tolist()
+        return payload
 
     @app.post("/twin/benchmark")
     def twin_benchmark(req: TwinBenchmarkReq = Body(...)) -> dict[str, Any]:

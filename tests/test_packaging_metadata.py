@@ -126,6 +126,8 @@ def test_release_docs_do_not_conflict_with_packaging_policy() -> None:
     assert "`POST /reduce`" in readme
     assert "`POST /twin/build`" in readme
     assert "`POST /twin/predict`" in readme
+    assert "`return_prediction=false`" in readme
+    assert "`output_format=csv|npy`" in readme
     assert "`POST /twin/benchmark`" in readme
     assert "`POST /twin/package`" in readme
     assert "`POST /twin/package/inspect`" in readme

@@ -453,8 +453,85 @@ def test_twin_predict_endpoint_serves_saved_engine(tmp_path) -> None:
     assert payload["engine"] == str(engine_path)
     assert payload["input_shape"] == [1]
     assert payload["prediction_shape"] == [4]
+    assert payload["prediction_returned"] is True
+    assert payload["prediction_size"] == 4
+    assert payload["prediction_bytes"] > 0
+    assert payload["latency_ms"] >= 0.0
+    assert payload["output_path"] is None
     assert len(payload["preview"]) == 4
     assert len(payload["prediction"]) == 4
+
+    output_path = tmp_path / "prediction.csv"
+    file_payload = route_map["/twin/predict"](
+        TwinPredictReq(
+            engine_path=str(engine_path),
+            params=[[0.5], [0.75]],
+            return_prediction=False,
+            output_path=str(output_path),
+            output_format="csv",
+        )
+    )
+
+    assert file_payload["status"] == "ok"
+    assert file_payload["prediction_shape"] == [4, 2]
+    assert file_payload["prediction_returned"] is False
+    assert "prediction" not in file_payload
+    assert file_payload["output_path"] == str(output_path)
+    assert file_payload["output_format"] == "csv"
+    assert output_path.exists()
+    assert output_path.read_text(encoding="utf-8").splitlines()[0] == "sample_0,sample_1"
+
+    npy_path = tmp_path / "prediction.npy"
+    npy_payload = route_map["/twin/predict"](
+        TwinPredictReq(
+            engine_path=str(engine_path),
+            params=[0.5],
+            return_prediction=False,
+            output_path=str(npy_path),
+            output_format="npy",
+        )
+    )
+
+    assert npy_payload["status"] == "ok"
+    assert npy_payload["output_path"] == str(npy_path)
+    assert npy_payload["output_format"] == "npy"
+    assert "prediction" not in npy_payload
+    assert np.load(npy_path).shape == (4,)
+
+
+def test_twin_predict_endpoint_reports_bad_output_format(tmp_path) -> None:
+    import numpy as np
+    from fastapi import HTTPException
+
+    from naviertwin.api import TwinPredictReq, create_app
+    from naviertwin.core.digital_twin.twin_engine import TwinEngine
+
+    snapshots = np.vstack([np.linspace(0.0, 1.0, 6), np.linspace(1.0, 2.0, 6)])
+    params = np.linspace(0.0, 1.0, 6).reshape(-1, 1)
+    engine = TwinEngine(reducer_type="pod", surrogate_type="rbf", n_modes=1)
+    engine.fit(snapshots, params)
+    engine_path = tmp_path / "engine.pkl"
+    engine.save(engine_path)
+
+    app = create_app()
+    route_map = {
+        route.path: route.endpoint
+        for route in app.routes
+        if hasattr(route, "path") and hasattr(route, "endpoint")
+    }
+
+    with pytest.raises(HTTPException) as exc:
+        route_map["/twin/predict"](
+            TwinPredictReq(
+                engine_path=str(engine_path),
+                params=[0.5],
+                output_path=str(tmp_path / "prediction.bin"),
+                output_format="vtk",
+            )
+        )
+
+    assert exc.value.status_code == 400
+    assert "unsupported output_format" in str(exc.value.detail)
 
 
 def test_twin_predict_endpoint_reports_bad_parameter_shape(tmp_path) -> None:
