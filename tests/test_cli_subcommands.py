@@ -15,6 +15,7 @@ EXPECTED_SUBCOMMANDS = [
     "model-sweep",
     "build-twin",
     "predict-twin",
+    "validate-twin",
     "preflight",
     "support-bundle",
     "autorefine",
@@ -160,3 +161,32 @@ class TestCLISubcommands:
         assert prediction_payload["input_shape"] == [1]
         assert prediction_payload["prediction_shape"] == [8]
         assert (tmp_path / "prediction.csv").exists()
+
+        validate_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "naviertwin.main",
+                "validate-twin",
+                "--engine",
+                str(outdir / "engine.pkl"),
+                "--csv-snapshots",
+                ",".join(str(path) for path in paths),
+                "--field-column",
+                "U",
+                "--output",
+                str(tmp_path / "validation.json"),
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert validate_result.returncode == 0, validate_result.stderr
+
+        validation_payload = json.loads(validate_result.stdout)
+        assert validation_payload["status"] == "ok"
+        assert validation_payload["validation"]["truth_shape"] == [8, 10]
+        assert validation_payload["validation"]["prediction_shape"] == [8, 10]
+        assert "rmse" in validation_payload["metrics"]
+        assert (tmp_path / "validation.json").exists()

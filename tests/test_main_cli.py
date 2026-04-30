@@ -121,6 +121,28 @@ class TestBuildParser:
         assert args.params == "0.25"
         assert args.as_json is True
 
+    def test_parse_validate_twin_subcommand(self, tmp_path) -> None:
+        from naviertwin.main import _build_parser
+
+        p = _build_parser()
+        args = p.parse_args(
+            [
+                "validate-twin",
+                "--engine",
+                str(tmp_path / "engine.pkl"),
+                "--csv-snapshots",
+                str(tmp_path / "snapshots"),
+                "--field-column",
+                "U",
+                "--json",
+            ]
+        )
+        assert args.command == "validate-twin"
+        assert args.engine.endswith("engine.pkl")
+        assert args.csv_snapshots.endswith("snapshots")
+        assert args.field_column == "U"
+        assert args.as_json is True
+
     def test_parse_autorefine_subcommand(self) -> None:
         from naviertwin.main import _build_parser
 
@@ -234,7 +256,7 @@ class TestRunBuildTwin:
         pytest.importorskip("h5py")
         pytest.importorskip("pandas")
         pytest.importorskip("sklearn")
-        from naviertwin.main import _run_build_twin, _run_predict_twin
+        from naviertwin.main import _run_build_twin, _run_predict_twin, _run_validate_twin
 
         paths = []
         for step in range(10):
@@ -286,6 +308,25 @@ class TestRunBuildTwin:
         assert predict_code == 0
         assert predict_payload["prediction_shape"] == [8]
         assert (tmp_path / "prediction.csv").exists()
+
+        validate_code = _run_validate_twin(
+            engine_path=str(tmp_path / "twin" / "engine.pkl"),
+            input_path=None,
+            csv_snapshots=",".join(str(path) for path in paths),
+            field=None,
+            field_column="U",
+            params=None,
+            param_columns=None,
+            output=str(tmp_path / "validation.json"),
+            as_json=True,
+        )
+        validate_payload = json.loads(capsys.readouterr().out)
+
+        assert validate_code == 0
+        assert validate_payload["validation"]["truth_shape"] == [8, 10]
+        assert validate_payload["validation"]["prediction_shape"] == [8, 10]
+        assert "relative_l2" in validate_payload["metrics"]
+        assert (tmp_path / "validation.json").exists()
 
     def test_run_build_twin_reports_small_dataset(self, tmp_path, capsys) -> None:
         from naviertwin.main import _run_build_twin

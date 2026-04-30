@@ -295,6 +295,10 @@ class MainWindow(QMainWindow):
         predict_twin_action.triggered.connect(self._predict_twin_from_engine)
         self._tools_menu.addAction(predict_twin_action)
 
+        validate_twin_action = QAction("저장된 트윈 검증(&V)", self)
+        validate_twin_action.triggered.connect(self._validate_twin_from_engine)
+        self._tools_menu.addAction(validate_twin_action)
+
         server_start_action = QAction("API 서버 시작(&S)", self)
         server_start_action.triggered.connect(self._start_api_server)
         self._tools_menu.addAction(server_start_action)
@@ -863,6 +867,111 @@ class MainWindow(QMainWindow):
             engine_path=str(engine_path),
             params=params,
             params_csv=None,
+            param_columns=None,
+            output=str(output) if output is not None else None,
+            as_json=False,
+        )
+
+    def _validate_twin_from_engine(self) -> None:
+        """저장된 TwinEngine을 선택한 CSV 기준 snapshot과 비교 검증한다."""
+        engine_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "TwinEngine 선택",
+            "",
+            "Pickle (*.pkl)",
+        )
+        if not engine_path:
+            return
+
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "검증 CSV 스냅샷 선택",
+            "",
+            "CSV snapshots (*.csv)",
+        )
+        if not paths:
+            return
+
+        field_column, ok = QInputDialog.getText(
+            self,
+            "필드 컬럼",
+            "검증할 scalar/vector 성분 컬럼명:",
+            text="U",
+        )
+        field_column = field_column.strip()
+        if not ok or not field_column:
+            return
+
+        output, _ = QFileDialog.getSaveFileName(
+            self,
+            "검증 JSON 저장",
+            "validation.json",
+            "JSON (*.json)",
+        )
+        self._validate_twin_from_paths(
+            Path(engine_path),
+            [Path(path) for path in paths],
+            field_column=field_column,
+            output=Path(output) if output else None,
+        )
+
+    def _validate_twin_from_paths(
+        self,
+        engine_path: Path,
+        csv_paths: list[Path],
+        *,
+        field_column: str,
+        output: Path | None,
+    ) -> None:
+        """GUI에서 validate-twin CLI 워크플로우를 실행한다."""
+        try:
+            code = self._run_validate_twin_cli(
+                engine_path,
+                csv_paths,
+                field_column=field_column,
+                output=output,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._set_status("트윈 검증 실패")
+            QMessageBox.warning(self, "트윈 검증 실패", str(exc))
+            return
+        if code != 0:
+            self._set_status("트윈 검증 실패")
+            QMessageBox.warning(
+                self,
+                "트윈 검증 실패",
+                f"validate-twin 종료 코드: {code}",
+            )
+            return
+
+        if engine_path.exists():
+            self._load_engine_artifact(engine_path)
+        self._set_status("트윈 검증 완료")
+        suffix = f"\n저장 위치: {output}" if output is not None else ""
+        QMessageBox.information(
+            self,
+            "트윈 검증 완료",
+            f"저장된 TwinEngine 검증이 완료되었습니다.{suffix}",
+        )
+
+    def _run_validate_twin_cli(
+        self,
+        engine_path: Path,
+        csv_paths: list[Path],
+        *,
+        field_column: str,
+        output: Path | None,
+    ) -> int:
+        """테스트에서 대체 가능한 validate-twin 실행 래퍼."""
+        from naviertwin.main import _run_validate_twin
+
+        return _run_validate_twin(
+            engine_path=str(engine_path),
+            input_path=None,
+            csv_snapshots=",".join(str(path) for path in csv_paths),
+            field=None,
+            field_column=field_column,
+            params=None,
             param_columns=None,
             output=str(output) if output is not None else None,
             as_json=False,

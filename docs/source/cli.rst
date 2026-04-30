@@ -87,6 +87,17 @@ Expected: loads a saved ``TwinEngine``, evaluates the input parameters, and
 prints prediction shape/preview metadata while optionally writing the predicted
 field matrix to CSV.
 
+validate-twin
+-------------
+
+.. code-block:: bash
+
+   naviertwin validate-twin --engine /tmp/naviertwin-twin/engine.pkl --csv-snapshots "case/snapshots/*.csv" --field-column U --output /tmp/naviertwin-validation.json --json
+
+Expected: reloads a saved ``TwinEngine``, predicts every supplied validation
+parameter row, compares the reconstructed field against CFD/CSV reference
+snapshots, and writes RMSE/R²/relative-L2/max-error metrics.
+
 preflight
 ---------
 

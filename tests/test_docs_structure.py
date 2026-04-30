@@ -295,6 +295,7 @@ class TestDocsStructure:
             "파이프라인 데모",
             "CSV 스냅샷으로 트윈 생성",
             "저장된 트윈 예측",
+            "저장된 트윈 검증",
             "API 서버",
         ]:
             assert token in combined

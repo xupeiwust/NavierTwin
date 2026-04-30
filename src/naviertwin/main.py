@@ -139,6 +139,27 @@ def _build_parser() -> argparse.ArgumentParser:
     p_predict.add_argument("--output", default=None, help="예측 필드 CSV 저장 경로")
     p_predict.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
 
+    # validate-twin
+    p_validate = sub.add_parser("validate-twin", help="저장된 TwinEngine을 기준 CFD/CSV 데이터로 검증")
+    p_validate.add_argument("--engine", required=True, help="검증할 engine.pkl 경로")
+    validate_source = p_validate.add_mutually_exclusive_group(required=True)
+    validate_source.add_argument("--input", default=None, help="ReaderFactory로 읽을 CFD 파일/케이스 경로")
+    validate_source.add_argument(
+        "--csv-snapshots",
+        default=None,
+        help="쉼표 구분 CSV 파일/글롭/디렉토리. 각 CSV는 하나의 기준 snapshot",
+    )
+    p_validate.add_argument("--field", default=None, help="CFD 입력에서 사용할 필드명")
+    p_validate.add_argument("--field-column", default=None, help="CSV snapshot에서 사용할 컬럼명")
+    p_validate.add_argument("--params", default=None, help="선택적 검증 파라미터 CSV 경로")
+    p_validate.add_argument(
+        "--param-columns",
+        default=None,
+        help="쉼표 구분 파라미터 컬럼명. 생략하면 numeric 컬럼 전체 사용",
+    )
+    p_validate.add_argument("--output", default=None, help="검증 metrics JSON 저장 경로")
+    p_validate.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
+
     # preflight
     p_preflight = sub.add_parser("preflight", help="CFD 입력 데이터 readiness 점검")
     p_preflight.add_argument("path", help="점검할 CFD 파일 또는 케이스 디렉토리")
@@ -302,6 +323,20 @@ def main() -> None:
                 engine_path=args.engine,
                 params=args.params,
                 params_csv=args.params_csv,
+                param_columns=args.param_columns,
+                output=args.output,
+                as_json=args.as_json,
+            )
+        )
+    elif args.command == "validate-twin":
+        sys.exit(
+            _run_validate_twin(
+                engine_path=args.engine,
+                input_path=args.input,
+                csv_snapshots=args.csv_snapshots,
+                field=args.field,
+                field_column=args.field_column,
+                params=args.params,
                 param_columns=args.param_columns,
                 output=args.output,
                 as_json=args.as_json,
@@ -949,6 +984,108 @@ def _run_predict_twin(
         if output_path is not None:
             print(f"output: {output_path}")
     return 0
+
+
+def _run_validate_twin(
+    *,
+    engine_path: str,
+    input_path: str | None,
+    csv_snapshots: str | None,
+    field: str | None,
+    field_column: str | None,
+    params: str | None,
+    param_columns: str | None,
+    output: str | None,
+    as_json: bool,
+) -> int:
+    """저장된 TwinEngine 예측장을 기준 CFD/CSV snapshot과 비교 검증한다."""
+    try:
+        import numpy as np
+
+        from naviertwin.core.digital_twin.twin_engine import TwinEngine
+        from naviertwin.core.validation.metrics import compute_all_metrics
+
+        engine_file = Path(engine_path).expanduser()
+        snapshots, selected_field, source_meta = _load_build_twin_snapshots(
+            input_path=input_path,
+            csv_snapshots=csv_snapshots,
+            field=field,
+            field_column=field_column,
+        )
+        truth = np.asarray(snapshots, dtype=np.float64)
+        if truth.ndim != 2:
+            raise ValueError(f"validation snapshots must be 2D, got shape {truth.shape}")
+
+        n_features, n_snapshots = truth.shape
+        params_array = _load_build_twin_params(
+            params_path=params,
+            param_columns=param_columns,
+            n_snapshots=n_snapshots,
+        )
+
+        engine = TwinEngine.load(engine_file)
+        prediction = _align_twin_prediction(engine.predict(params_array), truth.shape)
+        metrics = compute_all_metrics(truth, prediction)
+        per_sample_rmse = np.sqrt(np.mean((truth - prediction) ** 2, axis=0))
+        worst_index = int(np.argmax(per_sample_rmse)) if per_sample_rmse.size else 0
+
+        payload = {
+            "status": "ok",
+            "engine": str(engine_file),
+            "field": selected_field,
+            "source": source_meta,
+            "validation": {
+                "n_features": int(n_features),
+                "n_snapshots": int(n_snapshots),
+                "param_dim": int(params_array.shape[1]),
+                "truth_shape": list(truth.shape),
+                "prediction_shape": list(prediction.shape),
+                "worst_sample_index": worst_index,
+                "worst_sample_rmse": float(per_sample_rmse[worst_index])
+                if per_sample_rmse.size
+                else 0.0,
+            },
+            "metrics": metrics,
+        }
+        output_path = Path(output).expanduser() if output else None
+        if output_path is not None:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(
+                json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+                encoding="utf-8",
+            )
+    except (ImportError, RuntimeError, OSError, ValueError, KeyError) as exc:
+        print(f"validate-twin error: {exc}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print(
+            "validate-twin 완료: "
+            f"field={selected_field}, snapshots={n_snapshots}, "
+            f"rmse={metrics.get('rmse', float('nan')):.6g}, "
+            f"r2={metrics.get('r2', float('nan')):.6g}"
+        )
+        if output_path is not None:
+            print(f"output: {output_path}")
+    return 0
+
+
+def _align_twin_prediction(prediction: Any, expected_shape: tuple[int, int]) -> Any:
+    """TwinEngine 예측 결과를 snapshot 행렬 shape=(features, samples)에 맞춘다."""
+    import numpy as np
+
+    array = np.asarray(prediction, dtype=np.float64)
+    if array.shape == expected_shape:
+        return array
+    if array.T.shape == expected_shape:
+        return array.T
+    if expected_shape[1] == 1 and array.reshape(-1).shape[0] == expected_shape[0]:
+        return array.reshape(expected_shape)
+    raise ValueError(
+        f"prediction shape mismatch: got {array.shape}, expected {expected_shape}"
+    )
 
 
 def _run_preflight(*, path: str, as_json: bool, output: str | None = None) -> int:

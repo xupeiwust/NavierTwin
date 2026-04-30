@@ -24,6 +24,7 @@ def test_tools_menu_exposes_pipeline_demo_and_server_actions(qtbot) -> None:
     assert any("파이프라인 데모" in text for text in actions)
     assert any("CSV 스냅샷으로 트윈 생성" in text for text in actions)
     assert any("저장된 트윈 예측" in text for text in actions)
+    assert any("저장된 트윈 검증" in text for text in actions)
     assert any("API 서버 시작" in text for text in actions)
     assert any("API 서버 중지" in text for text in actions)
 
@@ -258,6 +259,79 @@ def test_predict_twin_from_engine_path_surfaces_failure(
     assert warnings[0][0] == "트윈 예측 실패"
     assert "2" in warnings[0][1]
     assert win._status_label.text() == "트윈 예측 실패"
+
+
+def test_validate_twin_from_paths_runs_cli_and_surfaces_result(
+    qtbot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from naviertwin.gui.main_window import MainWindow
+
+    win = MainWindow(confirm_on_close=False)
+    qtbot.addWidget(win)
+    csv_paths = [tmp_path / "snap_0.csv", tmp_path / "snap_1.csv"]
+    calls: list[tuple[Path, list[Path], str, Path | None]] = []
+    messages: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        win,
+        "_run_validate_twin_cli",
+        lambda engine_path, paths, *, field_column, output: (
+            calls.append((engine_path, paths, field_column, output)) or 0
+        ),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda parent, title, text: messages.append((title, text)),
+    )
+
+    engine_path = tmp_path / "engine.pkl"
+    output = tmp_path / "validation.json"
+    win._validate_twin_from_paths(
+        engine_path,
+        csv_paths,
+        field_column="U",
+        output=output,
+    )
+
+    assert calls == [(engine_path, csv_paths, "U", output)]
+    assert messages
+    assert messages[0][0] == "트윈 검증 완료"
+    assert str(output) in messages[0][1]
+    assert win._status_label.text() == "트윈 검증 완료"
+
+
+def test_validate_twin_from_paths_surfaces_failure(
+    qtbot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from naviertwin.gui.main_window import MainWindow
+
+    win = MainWindow(confirm_on_close=False)
+    qtbot.addWidget(win)
+    warnings: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(win, "_run_validate_twin_cli", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda parent, title, text: warnings.append((title, text)),
+    )
+
+    win._validate_twin_from_paths(
+        tmp_path / "engine.pkl",
+        [tmp_path / "snap.csv"],
+        field_column="U",
+        output=None,
+    )
+
+    assert warnings
+    assert warnings[0][0] == "트윈 검증 실패"
+    assert "2" in warnings[0][1]
+    assert win._status_label.text() == "트윈 검증 실패"
 
 
 def test_api_server_start_uses_qprocess(qtbot, monkeypatch: pytest.MonkeyPatch) -> None:
