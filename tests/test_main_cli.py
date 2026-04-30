@@ -146,6 +146,25 @@ class TestBuildParser:
         assert args.max_rmse == 0.1
         assert args.as_json is True
 
+    def test_parse_package_twin_subcommand(self, tmp_path) -> None:
+        from naviertwin.main import _build_parser
+
+        p = _build_parser()
+        args = p.parse_args(
+            [
+                "package-twin",
+                "--artifacts-dir",
+                str(tmp_path / "twin"),
+                "--output",
+                str(tmp_path / "twin.zip"),
+                "--json",
+            ]
+        )
+        assert args.command == "package-twin"
+        assert args.artifacts_dir.endswith("twin")
+        assert args.output.endswith("twin.zip")
+        assert args.as_json is True
+
     def test_parse_autorefine_subcommand(self) -> None:
         from naviertwin.main import _build_parser
 
@@ -259,7 +278,12 @@ class TestRunBuildTwin:
         pytest.importorskip("h5py")
         pytest.importorskip("pandas")
         pytest.importorskip("sklearn")
-        from naviertwin.main import _run_build_twin, _run_predict_twin, _run_validate_twin
+        from naviertwin.main import (
+            _run_build_twin,
+            _run_package_twin,
+            _run_predict_twin,
+            _run_validate_twin,
+        )
 
         paths = []
         for step in range(10):
@@ -363,6 +387,20 @@ class TestRunBuildTwin:
         assert gated_payload["status"] == "failed"
         assert gated_payload["acceptance"]["configured"] is True
         assert gated_payload["acceptance"]["checks"][0]["metric"] == "rmse"
+
+        package_code = _run_package_twin(
+            artifacts_dir=str(tmp_path / "twin"),
+            include_validation=str(tmp_path / "validation.json"),
+            output=str(tmp_path / "twin-delivery.zip"),
+            as_json=True,
+        )
+        package_payload = json.loads(capsys.readouterr().out)
+
+        assert package_code == 0
+        assert package_payload["status"] == "ok"
+        assert "engine.pkl" in package_payload["files"]
+        assert "validation.json" in package_payload["files"]
+        assert (tmp_path / "twin-delivery.zip").exists()
 
     def test_run_build_twin_reports_small_dataset(self, tmp_path, capsys) -> None:
         from naviertwin.main import _run_build_twin

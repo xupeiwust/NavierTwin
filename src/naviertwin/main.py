@@ -168,6 +168,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("--output", default=None, help="검증 metrics JSON 저장 경로")
     p_validate.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
 
+    # package-twin
+    p_package = sub.add_parser("package-twin", help="트윈 산출물을 고객 전달용 ZIP으로 패키징")
+    p_package.add_argument("--artifacts-dir", required=True, help="build-twin 산출물 디렉토리")
+    p_package.add_argument("--output", required=True, help="생성할 ZIP 경로")
+    p_package.add_argument(
+        "--include-validation",
+        default=None,
+        help="선택적 validate-twin JSON 리포트 경로",
+    )
+    p_package.add_argument("--json", dest="as_json", action="store_true", help="JSON으로 출력")
+
     # preflight
     p_preflight = sub.add_parser("preflight", help="CFD 입력 데이터 readiness 점검")
     p_preflight.add_argument("path", help="점검할 CFD 파일 또는 케이스 디렉토리")
@@ -350,6 +361,15 @@ def main() -> None:
                 min_r2=args.min_r2,
                 max_relative_l2=args.max_relative_l2,
                 output=args.output,
+                as_json=args.as_json,
+            )
+        )
+    elif args.command == "package-twin":
+        sys.exit(
+            _run_package_twin(
+                artifacts_dir=args.artifacts_dir,
+                output=args.output,
+                include_validation=args.include_validation,
                 as_json=args.as_json,
             )
         )
@@ -1169,6 +1189,66 @@ def _align_twin_prediction(prediction: Any, expected_shape: tuple[int, int]) -> 
     raise ValueError(
         f"prediction shape mismatch: got {array.shape}, expected {expected_shape}"
     )
+
+
+def _run_package_twin(
+    *,
+    artifacts_dir: str,
+    output: str,
+    include_validation: str | None,
+    as_json: bool,
+) -> int:
+    """build-twin 산출물을 무결성 manifest가 포함된 ZIP으로 패키징한다."""
+    try:
+        from naviertwin.utils.workflow.artifact_zip import read_manifest, zip_artifacts
+
+        root = Path(artifacts_dir).expanduser()
+        if not root.exists() or not root.is_dir():
+            raise FileNotFoundError(f"artifacts-dir not found: {root}")
+
+        files = _collect_twin_package_artifacts(root, include_validation=include_validation)
+        output_path = Path(output).expanduser()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        zip_artifacts(files, output_path)
+        zip_manifest = read_manifest(output_path)
+        payload = {
+            "status": "ok",
+            "output": str(output_path),
+            "artifacts_dir": str(root),
+            "files": [path.name for path in files],
+            "manifest_entries": zip_manifest,
+        }
+    except (ImportError, RuntimeError, OSError, ValueError, KeyError) as exc:
+        print(f"package-twin error: {exc}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print(
+            "package-twin 완료: "
+            f"files={len(payload['files'])}, output={output_path}"
+        )
+    return 0
+
+
+def _collect_twin_package_artifacts(
+    root: Path,
+    *,
+    include_validation: str | None,
+) -> list[Path]:
+    """고객 전달 ZIP에 포함할 build-twin 산출물 목록을 결정한다."""
+    required = ["engine.pkl", "manifest.json"]
+    optional = ["metrics.json", "pipeline.h5", "report.html"]
+    missing = [name for name in required if not (root / name).exists()]
+    if missing:
+        raise FileNotFoundError(f"missing required twin artifact: {missing[0]}")
+
+    files = [root / name for name in [*optional, *required] if (root / name).exists()]
+    validation_path = Path(include_validation).expanduser() if include_validation else root / "validation.json"
+    if validation_path.exists():
+        files.append(validation_path)
+    return list(dict.fromkeys(path.resolve() for path in files))
 
 
 def _run_preflight(*, path: str, as_json: bool, output: str | None = None) -> int:

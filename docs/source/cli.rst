@@ -100,6 +100,17 @@ parameter row, compares the reconstructed field against CFD/CSV reference
 snapshots, writes RMSE/R²/relative-L2/max-error metrics, and exits non-zero when
 configured acceptance thresholds fail.
 
+package-twin
+------------
+
+.. code-block:: bash
+
+   naviertwin package-twin --artifacts-dir /tmp/naviertwin-twin --include-validation /tmp/naviertwin-validation.json --output /tmp/naviertwin-twin.zip --json
+
+Expected: packages ``engine.pkl``, ``manifest.json``, ``metrics.json``,
+``pipeline.h5``, ``report.html``, and optional validation JSON into a delivery
+ZIP with an archive ``MANIFEST.json`` containing bytes and SHA256 hashes.
+
 preflight
 ---------
 

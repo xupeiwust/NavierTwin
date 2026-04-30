@@ -299,6 +299,10 @@ class MainWindow(QMainWindow):
         validate_twin_action.triggered.connect(self._validate_twin_from_engine)
         self._tools_menu.addAction(validate_twin_action)
 
+        package_twin_action = QAction("트윈 산출물 패키징(&Z)", self)
+        package_twin_action.triggered.connect(self._package_twin_artifacts)
+        self._tools_menu.addAction(package_twin_action)
+
         server_start_action = QAction("API 서버 시작(&S)", self)
         server_start_action.triggered.connect(self._start_api_server)
         self._tools_menu.addAction(server_start_action)
@@ -974,6 +978,60 @@ class MainWindow(QMainWindow):
             params=None,
             param_columns=None,
             output=str(output) if output is not None else None,
+            as_json=False,
+        )
+
+    def _package_twin_artifacts(self) -> None:
+        """build-twin 산출물 디렉토리를 고객 전달용 ZIP으로 패키징한다."""
+        artifacts_dir = QFileDialog.getExistingDirectory(
+            self,
+            "트윈 산출물 폴더 선택",
+            "",
+        )
+        if not artifacts_dir:
+            return
+
+        output, _ = QFileDialog.getSaveFileName(
+            self,
+            "트윈 ZIP 저장",
+            "naviertwin-delivery.zip",
+            "ZIP (*.zip)",
+        )
+        if output:
+            self._package_twin_from_paths(Path(artifacts_dir), output=Path(output))
+
+    def _package_twin_from_paths(self, artifacts_dir: Path, *, output: Path) -> None:
+        """GUI에서 package-twin CLI 워크플로우를 실행한다."""
+        try:
+            code = self._run_package_twin_cli(artifacts_dir, output=output)
+        except Exception as exc:  # noqa: BLE001
+            self._set_status("트윈 패키징 실패")
+            QMessageBox.warning(self, "트윈 패키징 실패", str(exc))
+            return
+        if code != 0:
+            self._set_status("트윈 패키징 실패")
+            QMessageBox.warning(
+                self,
+                "트윈 패키징 실패",
+                f"package-twin 종료 코드: {code}",
+            )
+            return
+
+        self._set_status("트윈 패키징 완료")
+        QMessageBox.information(
+            self,
+            "트윈 패키징 완료",
+            f"고객 전달용 ZIP 생성 위치:\n{output}",
+        )
+
+    def _run_package_twin_cli(self, artifacts_dir: Path, *, output: Path) -> int:
+        """테스트에서 대체 가능한 package-twin 실행 래퍼."""
+        from naviertwin.main import _run_package_twin
+
+        return _run_package_twin(
+            artifacts_dir=str(artifacts_dir),
+            include_validation=None,
+            output=str(output),
             as_json=False,
         )
 
