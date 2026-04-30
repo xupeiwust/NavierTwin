@@ -421,7 +421,19 @@ class TestRunBuildTwin:
         assert package_payload["source_integrity"]["passed"] is True
         assert "engine.pkl" in package_payload["files"]
         assert "validation.json" in package_payload["files"]
+        assert package_payload["generated_entries"] == ["README.txt", "delivery.json"]
+        assert "README.txt" not in package_payload["files"]
+        assert "delivery.json" not in package_payload["files"]
+        manifest_names = {entry["name"] for entry in package_payload["manifest_entries"]}
+        assert {"README.txt", "delivery.json"} <= manifest_names
         assert (tmp_path / "twin-delivery.zip").exists()
+
+        with zipfile.ZipFile(tmp_path / "twin-delivery.zip") as archive:
+            readme = archive.read("README.txt").decode("utf-8")
+            delivery = json.loads(archive.read("delivery.json").decode("utf-8"))
+        assert "verify-twin-package" in readme
+        assert delivery["format"] == "NavierTwin delivery package"
+        assert delivery["commands"]["predict"].startswith("naviertwin predict-twin")
 
         verify_code = _run_verify_twin_package(
             package_path=str(tmp_path / "twin-delivery.zip"),
@@ -431,7 +443,7 @@ class TestRunBuildTwin:
 
         assert verify_code == 0
         assert verify_payload["status"] == "ok"
-        assert verify_payload["manifest_entry_count"] >= 5
+        assert verify_payload["manifest_entry_count"] >= 7
         assert not verify_payload["errors"]
 
         bad_zip = tmp_path / "bad-delivery.zip"
@@ -457,6 +469,41 @@ class TestRunBuildTwin:
         assert bad_code == 1
         assert bad_payload["status"] == "failed"
         assert any("integrity mismatch" in error for error in bad_payload["errors"])
+
+        duplicate_zip = tmp_path / "duplicate-delivery.zip"
+        engine_data = b"engine"
+        manifest_data = b"{}"
+        with zipfile.ZipFile(duplicate_zip, "w") as archive:
+            archive.writestr("engine.pkl", b"shadow")
+            with pytest.warns(UserWarning, match="Duplicate name"):
+                archive.writestr("engine.pkl", engine_data)
+            archive.writestr("manifest.json", manifest_data)
+            archive.writestr(
+                "MANIFEST.json",
+                json.dumps(
+                    [
+                        {
+                            "name": "engine.pkl",
+                            "bytes": len(engine_data),
+                            "sha256": sha256(engine_data).hexdigest(),
+                        },
+                        {
+                            "name": "manifest.json",
+                            "bytes": len(manifest_data),
+                            "sha256": sha256(manifest_data).hexdigest(),
+                        },
+                    ]
+                ),
+            )
+        duplicate_code = _run_verify_twin_package(
+            package_path=str(duplicate_zip),
+            as_json=True,
+        )
+        duplicate_payload = json.loads(capsys.readouterr().out)
+
+        assert duplicate_code == 1
+        assert duplicate_payload["status"] == "failed"
+        assert "duplicate archive entry: engine.pkl" in duplicate_payload["errors"]
 
         (tmp_path / "twin" / "engine.pkl").write_bytes(b"tampered")
         tampered_code = _run_package_twin(

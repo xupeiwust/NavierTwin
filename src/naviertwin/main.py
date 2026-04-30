@@ -1220,13 +1220,19 @@ def _run_package_twin(
         files = _collect_twin_package_artifacts(root, include_validation=include_validation)
         output_path = Path(output).expanduser()
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        zip_artifacts(files, output_path)
+        delivery_entries = _build_twin_delivery_entries(
+            root,
+            files=files,
+            source_integrity=source_integrity,
+        )
+        zip_artifacts(files, output_path, extra_entries=delivery_entries)
         zip_manifest = read_manifest(output_path)
         payload = {
             "status": "ok",
             "output": str(output_path),
             "artifacts_dir": str(root),
             "files": [path.name for path in files],
+            "generated_entries": list(delivery_entries),
             "source_integrity": source_integrity,
             "manifest_entries": zip_manifest,
         }
@@ -1242,6 +1248,81 @@ def _run_package_twin(
             f"files={len(payload['files'])}, output={output_path}"
         )
     return 0
+
+
+def _build_twin_delivery_entries(
+    root: Path,
+    *,
+    files: list[Path],
+    source_integrity: dict[str, Any],
+) -> dict[str, str]:
+    """고객 전달 ZIP 내부에 생성할 안내/요약 파일을 만든다."""
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    extra_meta = manifest.get("extra", {})
+    if not isinstance(extra_meta, dict):
+        extra_meta = {}
+    predict_command = (
+        "naviertwin predict-twin --engine engine.pkl --params 0.25 "
+        "--output prediction.csv --json"
+    )
+    validate_command = (
+        "naviertwin validate-twin --engine engine.pkl "
+        '--csv-snapshots "case/validation/*.csv" '
+        "--field-column U --max-rmse 0.05 --min-r2 0.98 "
+        "--output validation.json --json"
+    )
+    verify_command = "naviertwin verify-twin-package --package naviertwin-twin.zip --json"
+    delivery = {
+        "format": "NavierTwin delivery package",
+        "schema": "naviertwin-delivery-v1",
+        "artifacts_dir": str(root),
+        "files": [path.name for path in files],
+        "generated_entries": ["README.txt", "delivery.json"],
+        "source_integrity": source_integrity,
+        "build_manifest": {
+            "config": manifest.get("config", {}),
+            "metrics": manifest.get("metrics", {}),
+            "extra": {
+                key: value
+                for key, value in extra_meta.items()
+                if key != "artifact_integrity"
+            },
+        },
+        "commands": {
+            "predict": predict_command,
+            "validate": validate_command,
+            "verify_package": verify_command,
+        },
+    }
+    readme = "\n".join(
+        [
+            "NavierTwin Digital Twin Delivery Package",
+            "========================================",
+            "",
+            "Included core artifacts:",
+            "- engine.pkl: loadable TwinEngine for parameter-to-field prediction",
+            "- manifest.json: build configuration, metrics, and artifact integrity",
+            "- metrics.json: build/validation metrics from build-twin",
+            "- report.html: customer-readable build report",
+            "- validation.json: optional independent validation report",
+            "",
+            "Recommended checks:",
+            "1. Verify this ZIP:",
+            f"   {verify_command}",
+            "2. Run a prediction:",
+            f"   {predict_command}",
+            "3. Validate against held-out snapshots:",
+            f"   {validate_command}",
+            "",
+            "See delivery.json for machine-readable package metadata.",
+            "",
+        ]
+    )
+    return {
+        "README.txt": readme,
+        "delivery.json": json.dumps(delivery, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+    }
 
 
 def _verify_twin_source_integrity(root: Path) -> dict[str, Any]:
@@ -1327,6 +1408,7 @@ def _run_verify_twin_package(*, package_path: str, as_json: bool) -> int:
 def _verify_twin_package_archive(package_path: Path) -> dict[str, Any]:
     """ZIP 내부 MANIFEST.json의 bytes/SHA256과 실제 archive entry를 대조한다."""
     import zipfile
+    from collections import Counter
     from hashlib import sha256
 
     if not package_path.exists():
@@ -1336,7 +1418,11 @@ def _verify_twin_package_archive(package_path: Path) -> dict[str, Any]:
     errors: list[str] = []
     checks: list[dict[str, Any]] = []
     with zipfile.ZipFile(package_path) as archive:
-        names = set(archive.namelist())
+        archived_names = archive.namelist()
+        names = set(archived_names)
+        for name, count in sorted(Counter(archived_names).items()):
+            if count > 1:
+                errors.append(f"duplicate archive entry: {name}")
         if "MANIFEST.json" not in names:
             errors.append("missing MANIFEST.json")
             manifest_entries: list[Any] = []
@@ -1351,6 +1437,8 @@ def _verify_twin_package_archive(package_path: Path) -> dict[str, Any]:
                 errors.append("invalid MANIFEST.json entry")
                 continue
             name = str(entry.get("name", ""))
+            if name in manifest_names:
+                errors.append(f"duplicate MANIFEST.json entry: {name}")
             manifest_names.add(name)
             if name not in names:
                 errors.append(f"missing archived file: {name}")

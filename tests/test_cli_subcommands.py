@@ -217,6 +217,11 @@ class TestCLISubcommands:
         assert package_payload["status"] == "ok"
         assert "engine.pkl" in package_payload["files"]
         assert "validation.json" in package_payload["files"]
+        assert package_payload["generated_entries"] == ["README.txt", "delivery.json"]
+        assert "README.txt" not in package_payload["files"]
+        assert "delivery.json" not in package_payload["files"]
+        manifest_names = {entry["name"] for entry in package_payload["manifest_entries"]}
+        assert {"README.txt", "delivery.json"} <= manifest_names
         assert (tmp_path / "twin-delivery.zip").exists()
 
         verify_package_result = subprocess.run(
@@ -237,4 +242,4 @@ class TestCLISubcommands:
 
         verify_payload = json.loads(verify_package_result.stdout)
         assert verify_payload["status"] == "ok"
-        assert verify_payload["manifest_entry_count"] >= 5
+        assert verify_payload["manifest_entry_count"] >= 7
