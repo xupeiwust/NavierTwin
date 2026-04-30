@@ -127,7 +127,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # predict-twin
     p_predict = sub.add_parser("predict-twin", help="저장된 TwinEngine으로 즉시 예측")
-    p_predict.add_argument("--engine", required=True, help="build-twin이 생성한 engine.pkl 경로")
+    predict_engine = p_predict.add_mutually_exclusive_group(required=True)
+    predict_engine.add_argument("--engine", default=None, help="build-twin이 생성한 engine.pkl 경로")
+    predict_engine.add_argument(
+        "--artifacts-dir",
+        default=None,
+        help="engine.pkl을 포함한 build/extract 산출물 디렉토리",
+    )
     predict_source = p_predict.add_mutually_exclusive_group(required=True)
     predict_source.add_argument("--params", default=None, help="쉼표 구분 단일 입력 파라미터")
     predict_source.add_argument("--params-csv", default=None, help="배치 입력 파라미터 CSV 경로")
@@ -361,6 +367,7 @@ def main() -> None:
         sys.exit(
             _run_predict_twin(
                 engine_path=args.engine,
+                artifacts_dir=args.artifacts_dir,
                 params=args.params,
                 params_csv=args.params_csv,
                 param_columns=args.param_columns,
@@ -1017,9 +1024,27 @@ def _parse_csv_floats(value: str, *, label: str) -> list[float]:
     return parsed
 
 
+def _resolve_twin_engine_path(
+    *,
+    engine_path: str | None,
+    artifacts_dir: str | None,
+) -> Path:
+    """engine.pkl 직접 경로 또는 산출물 디렉토리에서 TwinEngine 경로를 찾는다."""
+    if engine_path:
+        return Path(engine_path).expanduser()
+    if artifacts_dir:
+        root = Path(artifacts_dir).expanduser()
+        engine_file = root / "engine.pkl"
+        if not engine_file.exists():
+            raise FileNotFoundError(f"missing engine.pkl in artifacts-dir: {root}")
+        return engine_file
+    raise ValueError("--engine or --artifacts-dir is required")
+
+
 def _run_predict_twin(
     *,
-    engine_path: str,
+    engine_path: str | None,
+    artifacts_dir: str | None = None,
     params: str | None,
     params_csv: str | None,
     param_columns: str | None,
@@ -1032,7 +1057,10 @@ def _run_predict_twin(
 
         from naviertwin.core.digital_twin.twin_engine import TwinEngine
 
-        engine_file = Path(engine_path).expanduser()
+        engine_file = _resolve_twin_engine_path(
+            engine_path=engine_path,
+            artifacts_dir=artifacts_dir,
+        )
         engine = TwinEngine.load(engine_file)
         params_array = _load_predict_twin_params(
             params=params,
@@ -1051,6 +1079,7 @@ def _run_predict_twin(
         payload = {
             "status": "ok",
             "engine": str(engine_file),
+            "artifacts_dir": str(Path(artifacts_dir).expanduser()) if artifacts_dir else None,
             "input_shape": list(params_array.shape),
             "prediction_shape": list(prediction.shape),
             "output": str(output_path) if output_path is not None else None,
@@ -1284,7 +1313,7 @@ def _build_twin_delivery_entries(
     if not isinstance(extra_meta, dict):
         extra_meta = {}
     predict_command = (
-        "naviertwin predict-twin --engine engine.pkl --params 0.25 "
+        "naviertwin predict-twin --artifacts-dir <extracted-dir> --params 0.25 "
         "--output prediction.csv --json"
     )
     validate_command = (

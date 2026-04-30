@@ -24,6 +24,7 @@ def test_tools_menu_exposes_pipeline_demo_and_server_actions(qtbot) -> None:
     assert any("파이프라인 데모" in text for text in actions)
     assert any("CSV 스냅샷으로 트윈 생성" in text for text in actions)
     assert any("저장된 트윈 예측" in text for text in actions)
+    assert any("배포 트윈 디렉토리 예측" in text for text in actions)
     assert any("저장된 트윈 검증" in text for text in actions)
     assert any("트윈 산출물 패키징" in text for text in actions)
     assert any("트윈 패키지 정보 보기" in text for text in actions)
@@ -263,6 +264,72 @@ def test_predict_twin_from_engine_path_surfaces_failure(
     assert warnings[0][0] == "트윈 예측 실패"
     assert "2" in warnings[0][1]
     assert win._status_label.text() == "트윈 예측 실패"
+
+
+def test_predict_twin_from_artifacts_dir_path_runs_cli_and_surfaces_result(
+    qtbot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from naviertwin.gui.main_window import MainWindow
+
+    win = MainWindow(confirm_on_close=False)
+    qtbot.addWidget(win)
+    calls: list[tuple[Path, str, Path | None]] = []
+    messages: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        win,
+        "_run_predict_twin_artifacts_cli",
+        lambda artifacts_dir, *, params, output: (
+            calls.append((artifacts_dir, params, output)) or 0
+        ),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda parent, title, text: messages.append((title, text)),
+    )
+
+    artifacts_dir = tmp_path / "deployed-twin"
+    output = tmp_path / "prediction.csv"
+    win._predict_twin_from_artifacts_dir_path(artifacts_dir, params="0.25", output=output)
+
+    assert calls == [(artifacts_dir, "0.25", output)]
+    assert messages
+    assert messages[0][0] == "배포 트윈 예측 완료"
+    assert str(output) in messages[0][1]
+    assert win._status_label.text() == "배포 트윈 예측 완료"
+
+
+def test_predict_twin_from_artifacts_dir_path_surfaces_failure(
+    qtbot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from naviertwin.gui.main_window import MainWindow
+
+    win = MainWindow(confirm_on_close=False)
+    qtbot.addWidget(win)
+    warnings: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(win, "_run_predict_twin_artifacts_cli", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda parent, title, text: warnings.append((title, text)),
+    )
+
+    win._predict_twin_from_artifacts_dir_path(
+        tmp_path / "deployed-twin",
+        params="0.25",
+        output=None,
+    )
+
+    assert warnings
+    assert warnings[0][0] == "배포 트윈 예측 실패"
+    assert "2" in warnings[0][1]
+    assert win._status_label.text() == "배포 트윈 예측 실패"
 
 
 def test_validate_twin_from_paths_runs_cli_and_surfaces_result(

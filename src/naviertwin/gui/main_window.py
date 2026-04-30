@@ -295,6 +295,10 @@ class MainWindow(QMainWindow):
         predict_twin_action.triggered.connect(self._predict_twin_from_engine)
         self._tools_menu.addAction(predict_twin_action)
 
+        predict_deployed_twin_action = QAction("배포 트윈 디렉토리 예측(&D)", self)
+        predict_deployed_twin_action.triggered.connect(self._predict_twin_from_artifacts_dir)
+        self._tools_menu.addAction(predict_deployed_twin_action)
+
         validate_twin_action = QAction("저장된 트윈 검증(&V)", self)
         validate_twin_action.triggered.connect(self._validate_twin_from_engine)
         self._tools_menu.addAction(validate_twin_action)
@@ -869,6 +873,76 @@ class MainWindow(QMainWindow):
             f"저장된 TwinEngine 예측이 완료되었습니다.{suffix}",
         )
 
+    def _predict_twin_from_artifacts_dir(self) -> None:
+        """배포/추출된 트윈 산출물 디렉토리로 파라미터 예측을 실행한다."""
+        artifacts_dir = QFileDialog.getExistingDirectory(
+            self,
+            "트윈 산출물 디렉토리 선택",
+            "",
+        )
+        if not artifacts_dir:
+            return
+
+        params, ok = QInputDialog.getText(
+            self,
+            "예측 파라미터",
+            "쉼표 구분 파라미터 값:",
+            text="0.5",
+        )
+        params = params.strip()
+        if not ok or not params:
+            return
+
+        output, _ = QFileDialog.getSaveFileName(
+            self,
+            "예측 CSV 저장",
+            "prediction.csv",
+            "CSV (*.csv)",
+        )
+        self._predict_twin_from_artifacts_dir_path(
+            Path(artifacts_dir),
+            params=params,
+            output=Path(output) if output else None,
+        )
+
+    def _predict_twin_from_artifacts_dir_path(
+        self,
+        artifacts_dir: Path,
+        *,
+        params: str,
+        output: Path | None,
+    ) -> None:
+        """GUI에서 predict-twin --artifacts-dir 워크플로우를 실행한다."""
+        try:
+            code = self._run_predict_twin_artifacts_cli(
+                artifacts_dir,
+                params=params,
+                output=output,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._set_status("배포 트윈 예측 실패")
+            QMessageBox.warning(self, "배포 트윈 예측 실패", str(exc))
+            return
+        if code != 0:
+            self._set_status("배포 트윈 예측 실패")
+            QMessageBox.warning(
+                self,
+                "배포 트윈 예측 실패",
+                f"predict-twin 종료 코드: {code}",
+            )
+            return
+
+        engine_path = artifacts_dir / "engine.pkl"
+        if engine_path.exists():
+            self._load_engine_artifact(engine_path)
+        self._set_status("배포 트윈 예측 완료")
+        suffix = f"\n저장 위치: {output}" if output is not None else ""
+        QMessageBox.information(
+            self,
+            "배포 트윈 예측 완료",
+            f"배포된 트윈 디렉토리 예측이 완료되었습니다.{suffix}",
+        )
+
     def _run_predict_twin_cli(
         self,
         engine_path: Path,
@@ -881,6 +955,27 @@ class MainWindow(QMainWindow):
 
         return _run_predict_twin(
             engine_path=str(engine_path),
+            artifacts_dir=None,
+            params=params,
+            params_csv=None,
+            param_columns=None,
+            output=str(output) if output is not None else None,
+            as_json=False,
+        )
+
+    def _run_predict_twin_artifacts_cli(
+        self,
+        artifacts_dir: Path,
+        *,
+        params: str,
+        output: Path | None,
+    ) -> int:
+        """테스트에서 대체 가능한 predict-twin --artifacts-dir 실행 래퍼."""
+        from naviertwin.main import _run_predict_twin
+
+        return _run_predict_twin(
+            engine_path=None,
+            artifacts_dir=str(artifacts_dir),
             params=params,
             params_csv=None,
             param_columns=None,

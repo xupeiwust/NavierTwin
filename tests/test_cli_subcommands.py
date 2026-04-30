@@ -270,3 +270,28 @@ class TestCLISubcommands:
         assert verify_payload["manifest_entry_count"] >= 7
         assert verify_payload["extracted_to"].endswith("deployed-twin")
         assert (tmp_path / "deployed-twin" / "engine.pkl").exists()
+
+        deployed_predict_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "naviertwin.main",
+                "predict-twin",
+                "--artifacts-dir",
+                str(tmp_path / "deployed-twin"),
+                "--params",
+                "0.25",
+                "--output",
+                str(tmp_path / "deployed-prediction.csv"),
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert deployed_predict_result.returncode == 0, deployed_predict_result.stderr
+
+        deployed_predict_payload = json.loads(deployed_predict_result.stdout)
+        assert deployed_predict_payload["status"] == "ok"
+        assert deployed_predict_payload["artifacts_dir"].endswith("deployed-twin")
+        assert (tmp_path / "deployed-prediction.csv").exists()

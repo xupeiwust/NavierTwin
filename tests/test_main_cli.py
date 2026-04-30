@@ -123,6 +123,26 @@ class TestBuildParser:
         assert args.params == "0.25"
         assert args.as_json is True
 
+    def test_parse_predict_twin_artifacts_dir_subcommand(self, tmp_path) -> None:
+        from naviertwin.main import _build_parser
+
+        p = _build_parser()
+        args = p.parse_args(
+            [
+                "predict-twin",
+                "--artifacts-dir",
+                str(tmp_path / "deployed-twin"),
+                "--params",
+                "0.25",
+                "--json",
+            ]
+        )
+        assert args.command == "predict-twin"
+        assert args.artifacts_dir.endswith("deployed-twin")
+        assert args.engine is None
+        assert args.params == "0.25"
+        assert args.as_json is True
+
     def test_parse_validate_twin_subcommand(self, tmp_path) -> None:
         from naviertwin.main import _build_parser
 
@@ -485,6 +505,22 @@ class TestRunBuildTwin:
         assert not verify_payload["errors"]
         assert (tmp_path / "deployed-twin" / "engine.pkl").exists()
         assert (tmp_path / "deployed-twin" / "README.txt").exists()
+
+        deployed_predict_code = _run_predict_twin(
+            engine_path=None,
+            artifacts_dir=str(tmp_path / "deployed-twin"),
+            params="0.25",
+            params_csv=None,
+            param_columns=None,
+            output=str(tmp_path / "deployed-prediction.csv"),
+            as_json=True,
+        )
+        deployed_predict_payload = json.loads(capsys.readouterr().out)
+
+        assert deployed_predict_code == 0
+        assert deployed_predict_payload["artifacts_dir"].endswith("deployed-twin")
+        assert deployed_predict_payload["engine"].endswith("engine.pkl")
+        assert (tmp_path / "deployed-prediction.csv").exists()
 
         repeat_extract_code = _run_verify_twin_package(
             package_path=str(tmp_path / "twin-delivery.zip"),
