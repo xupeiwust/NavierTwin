@@ -18,6 +18,8 @@ def test_advertised_rest_endpoints_return_json() -> None:
         for route in app.routes
         if hasattr(route, "path") and hasattr(route, "endpoint")
     }
+    assert "/twin/predict" in route_map
+    assert "/twin/benchmark" in route_map
 
     assert route_map["/health"]() == {"status": "ok", "service": "naviertwin"}
 
@@ -131,3 +133,85 @@ def test_twin_predict_endpoint_reports_corrupt_engine(tmp_path) -> None:
         )
 
     assert exc.value.status_code == 400
+
+
+def test_twin_benchmark_endpoint_reports_latency_and_acceptance(tmp_path) -> None:
+    import numpy as np
+
+    from naviertwin.api import TwinBenchmarkReq, create_app
+    from naviertwin.core.digital_twin.twin_engine import TwinEngine
+
+    snapshots = np.vstack(
+        [
+            np.linspace(0.0, 1.0, 8),
+            np.linspace(1.0, 2.0, 8),
+            np.linspace(2.0, 3.0, 8),
+            np.linspace(3.0, 4.0, 8),
+        ]
+    )
+    params = np.linspace(0.0, 1.0, 8).reshape(-1, 1)
+    engine = TwinEngine(reducer_type="pod", surrogate_type="rbf", n_modes=2)
+    engine.fit(snapshots, params)
+    engine_path = tmp_path / "engine.pkl"
+    engine.save(engine_path)
+
+    app = create_app()
+    route_map = {
+        route.path: route.endpoint
+        for route in app.routes
+        if hasattr(route, "path") and hasattr(route, "endpoint")
+    }
+    payload = route_map["/twin/benchmark"](
+        TwinBenchmarkReq(
+            engine_path=str(engine_path),
+            params=[0.5],
+            warmup=0,
+            repeat=3,
+            max_p95_ms=100000.0,
+            min_throughput_hz=0.0001,
+        )
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["engine"] == str(engine_path)
+    assert payload["repeat"] == 3
+    assert len(payload["samples_ms"]) == 3
+    assert payload["latency_ms"]["p95"] >= payload["latency_ms"]["min"]
+    assert payload["throughput_hz"] is not None
+    assert payload["acceptance"]["configured"] is True
+    assert payload["acceptance"]["passed"] is True
+
+
+def test_twin_benchmark_endpoint_reports_slo_failure(tmp_path) -> None:
+    import numpy as np
+
+    from naviertwin.api import TwinBenchmarkReq, create_app
+    from naviertwin.core.digital_twin.twin_engine import TwinEngine
+
+    snapshots = np.vstack([np.linspace(0.0, 1.0, 6), np.linspace(1.0, 2.0, 6)])
+    params = np.linspace(0.0, 1.0, 6).reshape(-1, 1)
+    engine = TwinEngine(reducer_type="pod", surrogate_type="rbf", n_modes=1)
+    engine.fit(snapshots, params)
+    engine_path = tmp_path / "engine.pkl"
+    engine.save(engine_path)
+
+    app = create_app()
+    route_map = {
+        route.path: route.endpoint
+        for route in app.routes
+        if hasattr(route, "path") and hasattr(route, "endpoint")
+    }
+    payload = route_map["/twin/benchmark"](
+        TwinBenchmarkReq(
+            engine_path=str(engine_path),
+            params=[0.5],
+            warmup=0,
+            repeat=1,
+            max_mean_ms=0.0,
+        )
+    )
+
+    assert payload["status"] == "failed"
+    assert payload["acceptance"]["configured"] is True
+    assert payload["acceptance"]["passed"] is False
+    assert payload["acceptance"]["checks"][0]["metric"] == "latency_ms.mean"

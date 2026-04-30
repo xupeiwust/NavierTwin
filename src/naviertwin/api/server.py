@@ -5,6 +5,7 @@
     - POST /reduce                         : reducer 수행, 모드/에너지 반환
     - POST /reduce/pod                     : POD 전용(하위 호환)
     - POST /twin/predict                   : 저장/배포된 TwinEngine 예측
+    - POST /twin/benchmark                 : TwinEngine 예측 latency/SLO 측정
     - POST /analytic/couette              : Couette 해석해 샘플
     - POST /analytic/poiseuille_2d        : Poiseuille 2D 해석해 샘플
     - POST /optimize/bayesian             : BO 최소화 (간단 quadratic)
@@ -59,6 +60,18 @@ if _HAS_FASTAPI:
         artifacts_dir: Optional[str] = None
         params: Any
         preview_limit: int = 8
+
+    class TwinBenchmarkReq(BaseModel):
+        engine_path: Optional[str] = None
+        artifacts_dir: Optional[str] = None
+        params: Any
+        warmup: int = 2
+        repeat: int = 20
+        max_mean_ms: Optional[float] = None
+        max_p50_ms: Optional[float] = None
+        max_p95_ms: Optional[float] = None
+        max_p99_ms: Optional[float] = None
+        min_throughput_hz: Optional[float] = None
 
     class LBMReq(BaseModel):
         nx: int = 32
@@ -194,6 +207,40 @@ def create_app() -> Any:
             "prediction": prediction.tolist(),
         }
 
+    @app.post("/twin/benchmark")
+    def twin_benchmark(req: TwinBenchmarkReq = Body(...)) -> dict[str, Any]:
+        import pickle
+
+        from naviertwin.main import _benchmark_twin_payload
+
+        try:
+            params = np.asarray(req.params, dtype=np.float64)
+            payload = _benchmark_twin_payload(
+                engine_path=req.engine_path,
+                artifacts_dir=req.artifacts_dir,
+                params_array=params,
+                warmup=req.warmup,
+                repeat=req.repeat,
+                max_mean_ms=req.max_mean_ms,
+                max_p50_ms=req.max_p50_ms,
+                max_p95_ms=req.max_p95_ms,
+                max_p99_ms=req.max_p99_ms,
+                min_throughput_hz=req.min_throughput_hz,
+            )
+        except (
+            AttributeError,
+            EOFError,
+            ImportError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            pickle.PickleError,
+        ) as exc:
+            raise fastapi.HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return payload
+
     @app.post("/simulate/lbm_cavity")
     def lbm_cavity(req: LBMReq = Body(...)) -> dict[str, Any]:
         from naviertwin.core.solver_interfaces.lbm_d2q9 import LBMD2Q9
@@ -244,6 +291,7 @@ __all__ = [
     "LBMReq",
     "PODReq",
     "PoiseuilleReq",
+    "TwinBenchmarkReq",
     "TwinPredictReq",
     "app",
     "create_app",

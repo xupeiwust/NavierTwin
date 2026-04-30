@@ -359,6 +359,8 @@ class TestDocsStructure:
                 "PoiseuilleReq",
                 "PODReq",
                 "BayesianOptReq",
+                "TwinPredictReq",
+                "TwinBenchmarkReq",
                 "LBMReq",
             ],
             "naviertwin.gui": ["MainWindow"],

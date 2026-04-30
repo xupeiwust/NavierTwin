@@ -10,7 +10,14 @@ pytest.importorskip("fastapi", reason="FastAPI is required for API surface tests
 def test_api_root_exports_fastapi_entrypoints() -> None:
     """Package root should expose the customer-facing REST app surface."""
     import naviertwin.api as api
-    from naviertwin.api.server import CouetteReq, LBMReq, PODReq, create_app
+    from naviertwin.api.server import (
+        CouetteReq,
+        LBMReq,
+        PODReq,
+        TwinBenchmarkReq,
+        TwinPredictReq,
+        create_app,
+    )
 
     expected = {
         "create_app",
@@ -19,6 +26,8 @@ def test_api_root_exports_fastapi_entrypoints() -> None:
         "PoiseuilleReq",
         "PODReq",
         "BayesianOptReq",
+        "TwinPredictReq",
+        "TwinBenchmarkReq",
         "LBMReq",
     }
 
@@ -26,6 +35,8 @@ def test_api_root_exports_fastapi_entrypoints() -> None:
     assert api.create_app is create_app
     assert api.CouetteReq is CouetteReq
     assert api.PODReq is PODReq
+    assert api.TwinPredictReq is TwinPredictReq
+    assert api.TwinBenchmarkReq is TwinBenchmarkReq
     assert api.LBMReq is LBMReq
     assert api.app is not None
 
@@ -41,6 +52,8 @@ def test_api_root_create_app_exposes_advertised_routes() -> None:
         "/health",
         "/reduce",
         "/reduce/pod",
+        "/twin/predict",
+        "/twin/benchmark",
         "/analytic/couette",
         "/analytic/poiseuille_2d",
         "/simulate/lbm_cavity",

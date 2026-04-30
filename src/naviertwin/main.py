@@ -1400,6 +1400,90 @@ def _run_predict_twin(
     return 0
 
 
+def _benchmark_twin_payload(
+    *,
+    engine_path: str | None,
+    artifacts_dir: str | None,
+    params_array: Any,
+    warmup: int,
+    repeat: int,
+    max_mean_ms: float | None = None,
+    max_p50_ms: float | None = None,
+    max_p95_ms: float | None = None,
+    max_p99_ms: float | None = None,
+    min_throughput_hz: float | None = None,
+) -> dict[str, Any]:
+    """저장된 TwinEngine 예측 latency를 측정하고 CLI/API 공통 payload를 만든다."""
+    from time import perf_counter
+
+    import numpy as np
+
+    from naviertwin.core.digital_twin.twin_engine import TwinEngine
+
+    if warmup < 0:
+        raise ValueError("warmup must be >= 0")
+    if repeat < 1:
+        raise ValueError("repeat must be >= 1")
+
+    engine_file = _resolve_twin_engine_path(
+        engine_path=engine_path,
+        artifacts_dir=artifacts_dir,
+    )
+    engine = TwinEngine.load(engine_file)
+    params = np.asarray(params_array, dtype=np.float64)
+    if params.ndim not in {1, 2}:
+        raise ValueError(f"params must be 1D or 2D, got shape {params.shape}")
+    parameter_contract = _load_twin_parameter_contract(engine_file)
+    parameter_check = _check_twin_parameter_contract(params, parameter_contract)
+
+    for _ in range(warmup):
+        engine.predict(params)
+
+    samples_ms: list[float] = []
+    prediction_shape: list[int] = []
+    for _ in range(repeat):
+        started = perf_counter()
+        prediction = np.asarray(engine.predict(params), dtype=np.float64)
+        samples_ms.append(float((perf_counter() - started) * 1000.0))
+        prediction_shape = list(prediction.shape)
+
+    durations = np.asarray(samples_ms, dtype=np.float64)
+    mean_ms = float(np.mean(durations))
+    latency = {
+        "min": float(np.min(durations)),
+        "mean": mean_ms,
+        "p50": float(np.percentile(durations, 50)),
+        "p95": float(np.percentile(durations, 95)),
+        "p99": float(np.percentile(durations, 99)),
+        "max": float(np.max(durations)),
+    }
+    throughput_hz = float(1000.0 / mean_ms) if mean_ms > 0 else None
+    acceptance = _benchmark_twin_acceptance(
+        latency,
+        throughput_hz=throughput_hz,
+        max_mean_ms=max_mean_ms,
+        max_p50_ms=max_p50_ms,
+        max_p95_ms=max_p95_ms,
+        max_p99_ms=max_p99_ms,
+        min_throughput_hz=min_throughput_hz,
+    )
+    return {
+        "status": "ok" if acceptance["passed"] else "failed",
+        "engine": str(engine_file),
+        "artifacts_dir": str(Path(artifacts_dir).expanduser()) if artifacts_dir else None,
+        "input_shape": list(params.shape),
+        "prediction_shape": prediction_shape,
+        "warmup": int(warmup),
+        "repeat": int(repeat),
+        "latency_ms": latency,
+        "samples_ms": samples_ms,
+        "throughput_hz": throughput_hz,
+        "parameter_contract": parameter_contract,
+        "parameter_check": parameter_check,
+        "acceptance": acceptance,
+    }
+
+
 def _run_benchmark_twin(
     *,
     engine_path: str | None,
@@ -1419,76 +1503,23 @@ def _run_benchmark_twin(
 ) -> int:
     """저장된 TwinEngine의 반복 예측 latency를 측정한다."""
     try:
-        from time import perf_counter
-
-        import numpy as np
-
-        from naviertwin.core.digital_twin.twin_engine import TwinEngine
-
-        if warmup < 0:
-            raise ValueError("--warmup must be >= 0")
-        if repeat < 1:
-            raise ValueError("--repeat must be >= 1")
-
-        engine_file = _resolve_twin_engine_path(
-            engine_path=engine_path,
-            artifacts_dir=artifacts_dir,
-        )
-        engine = TwinEngine.load(engine_file)
         params_array = _load_predict_twin_params(
             params=params,
             params_csv=params_csv,
             param_columns=param_columns,
         )
-        parameter_contract = _load_twin_parameter_contract(engine_file)
-        parameter_check = _check_twin_parameter_contract(params_array, parameter_contract)
-
-        for _ in range(warmup):
-            engine.predict(params_array)
-
-        durations_ms: list[float] = []
-        prediction_shape: list[int] = []
-        for _ in range(repeat):
-            started = perf_counter()
-            prediction = np.asarray(engine.predict(params_array), dtype=np.float64)
-            durations_ms.append(float((perf_counter() - started) * 1000.0))
-            prediction_shape = list(prediction.shape)
-
-        durations = np.asarray(durations_ms, dtype=np.float64)
-        mean_ms = float(np.mean(durations))
-        latency = {
-            "min": float(np.min(durations)),
-            "mean": mean_ms,
-            "p50": float(np.percentile(durations, 50)),
-            "p95": float(np.percentile(durations, 95)),
-            "p99": float(np.percentile(durations, 99)),
-            "max": float(np.max(durations)),
-        }
-        throughput_hz = float(1000.0 / mean_ms) if mean_ms > 0 else None
-        acceptance = _benchmark_twin_acceptance(
-            latency,
-            throughput_hz=throughput_hz,
+        payload = _benchmark_twin_payload(
+            engine_path=engine_path,
+            artifacts_dir=artifacts_dir,
+            params_array=params_array,
+            warmup=warmup,
+            repeat=repeat,
             max_mean_ms=max_mean_ms,
             max_p50_ms=max_p50_ms,
             max_p95_ms=max_p95_ms,
             max_p99_ms=max_p99_ms,
             min_throughput_hz=min_throughput_hz,
         )
-        payload = {
-            "status": "ok" if acceptance["passed"] else "failed",
-            "engine": str(engine_file),
-            "artifacts_dir": str(Path(artifacts_dir).expanduser()) if artifacts_dir else None,
-            "input_shape": list(params_array.shape),
-            "prediction_shape": prediction_shape,
-            "warmup": int(warmup),
-            "repeat": int(repeat),
-            "latency_ms": latency,
-            "samples_ms": durations_ms,
-            "throughput_hz": throughput_hz,
-            "parameter_contract": parameter_contract,
-            "parameter_check": parameter_check,
-            "acceptance": acceptance,
-        }
         output_path = Path(output).expanduser() if output else None
         if output_path is not None:
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1503,6 +1534,8 @@ def _run_benchmark_twin(
     if as_json:
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     else:
+        latency = payload["latency_ms"]
+        acceptance = payload["acceptance"]
         print(
             "benchmark-twin 완료: "
             f"repeat={repeat}, p50={latency['p50']:.6g} ms, "
@@ -1512,7 +1545,7 @@ def _run_benchmark_twin(
             print("acceptance: failed")
         if output_path is not None:
             print(f"output: {output_path}")
-    return 0 if acceptance["passed"] else 1
+    return 0 if payload["acceptance"]["passed"] else 1
 
 
 def _benchmark_twin_acceptance(
