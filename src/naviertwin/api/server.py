@@ -4,6 +4,7 @@
     - GET  /health                        : 헬스 체크
     - POST /reduce                         : reducer 수행, 모드/에너지 반환
     - POST /reduce/pod                     : POD 전용(하위 호환)
+    - POST /twin/predict                   : 저장/배포된 TwinEngine 예측
     - POST /analytic/couette              : Couette 해석해 샘플
     - POST /analytic/poiseuille_2d        : Poiseuille 2D 해석해 샘플
     - POST /optimize/bayesian             : BO 최소화 (간단 quadratic)
@@ -52,6 +53,12 @@ if _HAS_FASTAPI:
         n_initial: int = 5
         max_iter: int = 10
         problem: str = "quadratic"
+
+    class TwinPredictReq(BaseModel):
+        engine_path: Optional[str] = None
+        artifacts_dir: Optional[str] = None
+        params: Any
+        preview_limit: int = 8
 
     class LBMReq(BaseModel):
         nx: int = 32
@@ -139,6 +146,54 @@ def create_app() -> Any:
         req.reducer_kind = "pod"
         return _run_reducer(req)
 
+    @app.post("/twin/predict")
+    def twin_predict(req: TwinPredictReq = Body(...)) -> dict[str, Any]:
+        import pickle
+
+        from naviertwin.core.digital_twin.twin_engine import TwinEngine
+        from naviertwin.main import (
+            _check_twin_parameter_contract,
+            _load_twin_parameter_contract,
+            _resolve_twin_engine_path,
+        )
+
+        try:
+            engine_file = _resolve_twin_engine_path(
+                engine_path=req.engine_path,
+                artifacts_dir=req.artifacts_dir,
+            )
+            engine = TwinEngine.load(engine_file)
+            params = np.asarray(req.params, dtype=np.float64)
+            if params.ndim not in {1, 2}:
+                raise ValueError(f"params must be 1D or 2D, got shape {params.shape}")
+            parameter_contract = _load_twin_parameter_contract(engine_file)
+            parameter_check = _check_twin_parameter_contract(params, parameter_contract)
+            prediction = np.asarray(engine.predict(params), dtype=np.float64)
+        except (
+            AttributeError,
+            EOFError,
+            ImportError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            pickle.PickleError,
+        ) as exc:
+            raise fastapi.HTTPException(status_code=400, detail=str(exc)) from exc
+
+        preview = prediction.reshape(-1)[: max(0, req.preview_limit)]
+        return {
+            "status": "ok",
+            "engine": str(engine_file),
+            "artifacts_dir": req.artifacts_dir,
+            "input_shape": list(params.shape),
+            "prediction_shape": list(prediction.shape),
+            "parameter_contract": parameter_contract,
+            "parameter_check": parameter_check,
+            "preview": [float(value) for value in preview],
+            "prediction": prediction.tolist(),
+        }
+
     @app.post("/simulate/lbm_cavity")
     def lbm_cavity(req: LBMReq = Body(...)) -> dict[str, Any]:
         from naviertwin.core.solver_interfaces.lbm_d2q9 import LBMD2Q9
@@ -189,6 +244,7 @@ __all__ = [
     "LBMReq",
     "PODReq",
     "PoiseuilleReq",
+    "TwinPredictReq",
     "app",
     "create_app",
 ]

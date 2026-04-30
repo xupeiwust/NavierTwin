@@ -13,6 +13,7 @@ from naviertwin.api.server import (
     LBMReq,
     PODReq,
     PoiseuilleReq,
+    TwinPredictReq,
     app,
     create_app,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "LBMReq",
     "PODReq",
     "PoiseuilleReq",
+    "TwinPredictReq",
     "app",
     "create_app",
 ]

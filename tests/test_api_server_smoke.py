@@ -41,3 +41,93 @@ def test_advertised_rest_endpoints_return_json() -> None:
     assert lbm_payload["n_snapshots"] == 2
     assert lbm_payload["shape"] == [2, 6, 6, 3]
     assert abs(lbm_payload["ux_max"]) < 1.0
+
+
+def test_twin_predict_endpoint_serves_saved_engine(tmp_path) -> None:
+    import numpy as np
+
+    from naviertwin.api import TwinPredictReq, create_app
+    from naviertwin.core.digital_twin.twin_engine import TwinEngine
+
+    snapshots = np.vstack(
+        [
+            np.linspace(0.0, 1.0, 8),
+            np.linspace(1.0, 2.0, 8),
+            np.linspace(2.0, 3.0, 8),
+            np.linspace(3.0, 4.0, 8),
+        ]
+    )
+    params = np.linspace(0.0, 1.0, 8).reshape(-1, 1)
+    engine = TwinEngine(reducer_type="pod", surrogate_type="rbf", n_modes=2)
+    engine.fit(snapshots, params)
+    engine_path = tmp_path / "engine.pkl"
+    engine.save(engine_path)
+
+    app = create_app()
+    route_map = {
+        route.path: route.endpoint
+        for route in app.routes
+        if hasattr(route, "path") and hasattr(route, "endpoint")
+    }
+    payload = route_map["/twin/predict"](
+        TwinPredictReq(engine_path=str(engine_path), params=[0.5])
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["engine"] == str(engine_path)
+    assert payload["input_shape"] == [1]
+    assert payload["prediction_shape"] == [4]
+    assert len(payload["preview"]) == 4
+    assert len(payload["prediction"]) == 4
+
+
+def test_twin_predict_endpoint_reports_bad_parameter_shape(tmp_path) -> None:
+    import numpy as np
+    from fastapi import HTTPException
+
+    from naviertwin.api import TwinPredictReq, create_app
+    from naviertwin.core.digital_twin.twin_engine import TwinEngine
+
+    snapshots = np.vstack([np.linspace(0.0, 1.0, 6), np.linspace(1.0, 2.0, 6)])
+    params = np.linspace(0.0, 1.0, 6).reshape(-1, 1)
+    engine = TwinEngine(reducer_type="pod", surrogate_type="rbf", n_modes=1)
+    engine.fit(snapshots, params)
+    engine_path = tmp_path / "engine.pkl"
+    engine.save(engine_path)
+
+    app = create_app()
+    route_map = {
+        route.path: route.endpoint
+        for route in app.routes
+        if hasattr(route, "path") and hasattr(route, "endpoint")
+    }
+
+    with pytest.raises(HTTPException) as exc:
+        route_map["/twin/predict"](
+            TwinPredictReq(engine_path=str(engine_path), params=[[[0.5]]])
+        )
+
+    assert exc.value.status_code == 400
+    assert "params must be 1D or 2D" in str(exc.value.detail)
+
+
+def test_twin_predict_endpoint_reports_corrupt_engine(tmp_path) -> None:
+    from fastapi import HTTPException
+
+    from naviertwin.api import TwinPredictReq, create_app
+
+    engine_path = tmp_path / "engine.pkl"
+    engine_path.write_bytes(b"not a pickle")
+    app = create_app()
+    route_map = {
+        route.path: route.endpoint
+        for route in app.routes
+        if hasattr(route, "path") and hasattr(route, "endpoint")
+    }
+
+    with pytest.raises(HTTPException) as exc:
+        route_map["/twin/predict"](
+            TwinPredictReq(engine_path=str(engine_path), params=[0.5])
+        )
+
+    assert exc.value.status_code == 400
