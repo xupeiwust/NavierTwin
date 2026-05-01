@@ -16,6 +16,8 @@
     - POST /twin/stream/init               : StreamingDigitalTwin 세션 초기화
     - POST /twin/stream/step               : StreamingDigitalTwin forecast 전파
     - POST /twin/stream/observe            : StreamingDigitalTwin 관측 동화
+    - POST /twin/stream/observe-batch      : StreamingDigitalTwin 관측 배치 동화
+    - POST /twin/stream/observe-line       : CSV/log 라인 관측 동화
     - GET  /twin/stream/state              : StreamingDigitalTwin 현재 상태 조회
     - POST /analytic/couette              : Couette 해석해 샘플
     - POST /analytic/poiseuille_2d        : Poiseuille 2D 해석해 샘플
@@ -112,6 +114,18 @@ if _HAS_FASTAPI:
     class TwinStreamObserveReq(BaseModel):
         session_id: str
         observation: List[float]  # noqa: UP006
+        advance: bool = True
+
+    class TwinStreamObserveBatchReq(BaseModel):
+        session_id: str
+        observations: List[List[float]]  # noqa: UP006
+        advance: bool = True
+
+    class TwinStreamObserveLineReq(BaseModel):
+        session_id: str
+        line: str
+        delimiter: str = ","
+        value_columns: Optional[List[int]] = None  # noqa: UP006
         advance: bool = True
 
     class TwinBenchmarkReq(BaseModel):
@@ -438,6 +452,39 @@ def create_app() -> Any:
                 detail=f"stream session not found: {session_id}",
             ) from exc
 
+    def _apply_stream_observation(
+        record: dict[str, Any],
+        observation: Any,
+        *,
+        advance: bool,
+    ) -> None:
+        if advance:
+            record["twin"].step()
+            record["step_count"] += 1
+        record["twin"].assimilate(np.asarray(observation, dtype=np.float64))
+        record["observation_count"] += 1
+
+    def _parse_stream_observation_line(req: TwinStreamObserveLineReq) -> list[float]:
+        tokens = [token.strip() for token in req.line.strip().split(req.delimiter)]
+        if not tokens or all(not token for token in tokens):
+            raise ValueError("line must contain observation values")
+        if req.value_columns is not None:
+            try:
+                tokens = [tokens[index] for index in req.value_columns]
+            except IndexError as exc:
+                raise ValueError("value_columns index out of range") from exc
+        values: list[float] = []
+        for token in tokens:
+            if not token:
+                continue
+            try:
+                values.append(float(token))
+            except ValueError as exc:
+                raise ValueError(f"non-numeric observation token: {token}") from exc
+        if not values:
+            raise ValueError("line must contain numeric observation values")
+        return values
+
     @app.post("/twin/stream/init")
     def twin_stream_init(req: TwinStreamInitReq = Body(...)) -> dict[str, Any]:
         from uuid import uuid4
@@ -549,14 +596,40 @@ def create_app() -> Any:
     def twin_stream_observe(req: TwinStreamObserveReq = Body(...)) -> dict[str, Any]:
         record = _get_stream_record(req.session_id)
         try:
-            if req.advance:
-                record["twin"].step()
-                record["step_count"] += 1
-            record["twin"].assimilate(np.asarray(req.observation, dtype=np.float64))
-            record["observation_count"] += 1
+            _apply_stream_observation(record, req.observation, advance=req.advance)
         except (RuntimeError, TypeError, ValueError) as exc:
             raise fastapi.HTTPException(status_code=400, detail=str(exc)) from exc
         return _stream_state_payload(req.session_id, record, event="observe")
+
+    @app.post("/twin/stream/observe-batch")
+    def twin_stream_observe_batch(
+        req: TwinStreamObserveBatchReq = Body(...),
+    ) -> dict[str, Any]:
+        record = _get_stream_record(req.session_id)
+        try:
+            if not req.observations:
+                raise ValueError("observations must not be empty")
+            for observation in req.observations:
+                _apply_stream_observation(record, observation, advance=req.advance)
+        except (RuntimeError, TypeError, ValueError) as exc:
+            raise fastapi.HTTPException(status_code=400, detail=str(exc)) from exc
+        payload = _stream_state_payload(req.session_id, record, event="observe-batch")
+        payload["processed_observations"] = len(req.observations)
+        return payload
+
+    @app.post("/twin/stream/observe-line")
+    def twin_stream_observe_line(
+        req: TwinStreamObserveLineReq = Body(...),
+    ) -> dict[str, Any]:
+        record = _get_stream_record(req.session_id)
+        try:
+            observation = _parse_stream_observation_line(req)
+            _apply_stream_observation(record, observation, advance=req.advance)
+        except (RuntimeError, TypeError, ValueError) as exc:
+            raise fastapi.HTTPException(status_code=400, detail=str(exc)) from exc
+        payload = _stream_state_payload(req.session_id, record, event="observe-line")
+        payload["parsed_observation"] = observation
+        return payload
 
     @app.get("/twin/stream/state")
     def twin_stream_state(session_id: str) -> dict[str, Any]:
@@ -786,6 +859,8 @@ __all__ = [
     "TwinPackageInspectReq",
     "TwinPackageVerifyReq",
     "TwinPredictReq",
+    "TwinStreamObserveBatchReq",
+    "TwinStreamObserveLineReq",
     "TwinStreamInitReq",
     "TwinStreamObserveReq",
     "TwinStreamStepReq",

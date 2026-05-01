@@ -29,6 +29,8 @@ def test_advertised_rest_endpoints_return_json() -> None:
     assert "/twin/stream/init" in route_map
     assert "/twin/stream/step" in route_map
     assert "/twin/stream/observe" in route_map
+    assert "/twin/stream/observe-batch" in route_map
+    assert "/twin/stream/observe-line" in route_map
     assert "/twin/stream/state" in route_map
 
     assert route_map["/health"]() == {"status": "ok", "service": "naviertwin"}
@@ -428,6 +430,8 @@ def test_twin_stream_endpoints_run_state_assimilation() -> None:
 
     from naviertwin.api import (
         TwinStreamInitReq,
+        TwinStreamObserveBatchReq,
+        TwinStreamObserveLineReq,
         TwinStreamObserveReq,
         TwinStreamStepReq,
         create_app,
@@ -442,6 +446,8 @@ def test_twin_stream_endpoints_run_state_assimilation() -> None:
     assert "/twin/stream/init" in route_map
     assert "/twin/stream/step" in route_map
     assert "/twin/stream/observe" in route_map
+    assert "/twin/stream/observe-batch" in route_map
+    assert "/twin/stream/observe-line" in route_map
     assert "/twin/stream/state" in route_map
 
     init_payload = route_map["/twin/stream/init"](
@@ -494,11 +500,42 @@ def test_twin_stream_endpoints_run_state_assimilation() -> None:
     assert state_payload["estimate"] == observe_payload["estimate"]
     assert state_payload["uncertainty"] == observe_payload["uncertainty"]
 
+    batch_payload = route_map["/twin/stream/observe-batch"](
+        TwinStreamObserveBatchReq(
+            session_id="case-001",
+            observations=[[0.22, -0.08], [0.2, -0.05]],
+            advance=True,
+        )
+    )
+    assert batch_payload["event"] == "observe-batch"
+    assert batch_payload["processed_observations"] == 2
+    assert batch_payload["observation_count"] == 3
+    assert batch_payload["step_count"] == 5
+
+    line_payload = route_map["/twin/stream/observe-line"](
+        TwinStreamObserveLineReq(
+            session_id="case-001",
+            line="123.0,0.18,-0.04",
+            value_columns=[1, 2],
+            advance=False,
+        )
+    )
+    assert line_payload["event"] == "observe-line"
+    assert line_payload["parsed_observation"] == [0.18, -0.04]
+    assert line_payload["observation_count"] == 4
+    assert line_payload["step_count"] == 5
+
 
 def test_twin_stream_endpoints_report_invalid_requests() -> None:
     from fastapi import HTTPException
 
-    from naviertwin.api import TwinStreamInitReq, TwinStreamStepReq, create_app
+    from naviertwin.api import (
+        TwinStreamInitReq,
+        TwinStreamObserveBatchReq,
+        TwinStreamObserveLineReq,
+        TwinStreamStepReq,
+        create_app,
+    )
 
     app = create_app()
     route_map = {
@@ -524,6 +561,33 @@ def test_twin_stream_endpoints_report_invalid_requests() -> None:
         )
     assert exc.value.status_code == 404
     assert "stream session not found" in str(exc.value.detail)
+
+    route_map["/twin/stream/init"](
+        TwinStreamInitReq(
+            session_id="invalid-inputs",
+            state_dim=2,
+            n_ensemble=10,
+            initial_std=0.01,
+        )
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        route_map["/twin/stream/observe-batch"](
+            TwinStreamObserveBatchReq(session_id="invalid-inputs", observations=[])
+        )
+    assert exc.value.status_code == 400
+    assert "observations must not be empty" in str(exc.value.detail)
+
+    with pytest.raises(HTTPException) as exc:
+        route_map["/twin/stream/observe-line"](
+            TwinStreamObserveLineReq(
+                session_id="invalid-inputs",
+                line="time,not-a-number",
+                value_columns=[1],
+            )
+        )
+    assert exc.value.status_code == 400
+    assert "non-numeric observation token" in str(exc.value.detail)
 
 
 def test_twin_predict_endpoint_serves_saved_engine(tmp_path) -> None:

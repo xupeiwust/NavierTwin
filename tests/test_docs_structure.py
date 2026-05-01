@@ -368,6 +368,8 @@ class TestDocsStructure:
                 "TwinPackageInspectReq",
                 "TwinPackageVerifyReq",
                 "TwinStreamInitReq",
+                "TwinStreamObserveBatchReq",
+                "TwinStreamObserveLineReq",
                 "TwinStreamObserveReq",
                 "TwinStreamStepReq",
                 "LBMReq",

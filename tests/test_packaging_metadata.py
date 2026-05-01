@@ -136,6 +136,8 @@ def test_release_docs_do_not_conflict_with_packaging_policy() -> None:
     assert "`POST /twin/stream/init`" in readme
     assert "`POST /twin/stream/step`" in readme
     assert "`POST /twin/stream/observe`" in readme
+    assert "`POST /twin/stream/observe-batch`" in readme
+    assert "`POST /twin/stream/observe-line`" in readme
     assert "`GET /twin/stream/state`" in readme
     assert "`POST /simulate/lbm_cavity`" in readme
     assert "비상업용" not in agents
