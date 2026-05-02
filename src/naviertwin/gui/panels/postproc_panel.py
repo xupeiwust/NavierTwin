@@ -88,9 +88,25 @@ class PostProcessPanel(QWidget):
 
         # 동적 파라미터 폼
         param_group = QGroupBox("Scalar 파라미터")
-        self._param_form_layout = QFormLayout(param_group)
+        param_group_layout = QVBoxLayout(param_group)
+        # 프리셋 선택 콤보
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(QLabel("프리셋:"))
+        self._preset_combo = QComboBox()
+        self._preset_combo.currentTextChanged.connect(self._on_preset_selected)
+        preset_row.addWidget(self._preset_combo, stretch=1)
+        param_group_layout.addLayout(preset_row)
+        # 동적 폼
+        param_form_widget = QWidget()
+        self._param_form_layout = QFormLayout(param_form_widget)
         self._param_widgets: dict[str, QWidget] = {}
+        param_group_layout.addWidget(param_form_widget)
         left_layout.addWidget(param_group)
+
+        # 프리셋 store
+        from naviertwin.core.post_process_presets import PresetStore
+
+        self._preset_store = PresetStore()
 
         # 실행 버튼
         self._run_btn = QPushButton("Demo 실행 (합성 데이터)")
@@ -210,6 +226,58 @@ class PostProcessPanel(QWidget):
         self._params_label.setText(", ".join(info["params"]))
         self._returns_label.setText(", ".join(info["returns"]))
         self._rebuild_param_form(op_name)
+        self._refresh_preset_combo(op_name)
+
+    def _refresh_preset_combo(self, op_name: str) -> None:
+        """현재 op에 대한 프리셋 콤보 갱신."""
+        self._preset_combo.blockSignals(True)
+        self._preset_combo.clear()
+        self._preset_combo.addItem("(없음)")
+        for name in self._preset_store.list_presets(op_name):
+            self._preset_combo.addItem(name)
+        self._preset_combo.blockSignals(False)
+
+    def _on_preset_selected(self, name: str) -> None:
+        """프리셋 선택 시 해당 값을 폼에 적용."""
+        if not name or name == "(없음)":
+            return
+        item = self._op_list.currentItem()
+        if item is None:
+            return
+        op_name = item.text()
+        preset = self._preset_store.get(op_name, name)
+        if not preset:
+            return
+        for k, v in preset.items():
+            widget = self._param_widgets.get(k)
+            if widget is None:
+                continue
+            try:
+                if isinstance(widget, QSpinBox):
+                    widget.setValue(int(v))
+                elif isinstance(widget, QDoubleSpinBox):
+                    widget.setValue(float(v))
+                elif isinstance(widget, QComboBox):
+                    widget.setCurrentText(str(v))
+            except (TypeError, ValueError):
+                continue
+
+    def add_user_preset(
+        self, op_name: str, preset_name: str, params: dict[str, Any] | None = None,
+    ) -> None:
+        """현재 폼 값 (또는 명시 params)을 사용자 프리셋으로 저장.
+
+        Args:
+            op_name: 대상 op.
+            preset_name: 저장 이름.
+            params: 명시적 파라미터; None이면 현재 폼 값 사용.
+        """
+        if params is None:
+            params = self._read_param_values()
+        self._preset_store.add(op_name, preset_name, params)
+        item = self._op_list.currentItem()
+        if item is not None and item.text() == op_name:
+            self._refresh_preset_combo(op_name)
 
     def _rebuild_param_form(self, op_name: str) -> None:
         """선택된 op의 scalar 파라미터에 맞춰 동적 폼 재생성."""
