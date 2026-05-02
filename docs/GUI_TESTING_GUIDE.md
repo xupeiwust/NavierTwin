@@ -1,263 +1,261 @@
-# NavierTwin GUI 검증 가이드
+# NavierTwin GUI 검증 가이드 — **결과 파일 로드 기반**
 
-10개 탭 모두 직접 테스트하는 절차. 각 탭에서 **기본 워크플로 → 에지 케이스
-→ 회귀 검증** 순으로 진행.
+실제 CFD 결과 파일 (.vtu / .vtk / .foam / .cgns / .npz / .csv)을 로드해
+모든 기능이 정상 작동하는지 단계별로 검증한다.
 
-## 0. 실행
+## 0. 검증용 데이터 생성
+
+테스트 파일이 없으면 합성 데이터를 자동 생성:
 
 ```bash
-# 권장 (소스 체크아웃에서 직접 실행)
-PYTHONPATH=src python3 -m naviertwin --gui
+PYTHONPATH=src python3 scripts/make_test_dataset.py /tmp/naviertwin_demo
+```
 
+생성되는 파일:
+- **`/tmp/naviertwin_demo/cavity.vtu`** — 20×20 cavity flow (U / p / T / wallShearStress, 400 pts)
+- **`/tmp/naviertwin_demo/cavity_time.npz`** — 시공간 행렬 (n_t=50 × n_x=400, rank-5 신호)
+- **`/tmp/naviertwin_demo/cavity_probe.csv`** — 단일 프로브 시계열 (n=2000, 5+17Hz, change point + spike)
+
+> 본인의 OpenFOAM/Fluent 결과를 쓰려면 위 합성 파일 대신 자기 .foam / .cgns / .vtu를 직접 사용. 지원 확장자: `.foam .cgns .vtk .vtu .vtp .stl .ply .msh .cas .dat .su2 .openfoam .ntwin`.
+
+## 1. GUI 실행
+
+```bash
+PYTHONPATH=src python3 -m naviertwin --gui
 # 또는 설치 후
 naviertwin --gui
 ```
 
 언어 전환: 메뉴 `보기 (V)` → `English / 한국어`.
 
-## 사전 준비 — 합성 데이터셋
+---
 
-테스트용 .ntwin 파일이 없으면 아래 명령으로 생성:
+## 시나리오 1 — `cavity.vtu` 1개 파일로 6개 탭 검증
+
+### ① Import 탭 — 파일 로드
+
+| 단계 | 동작 | 검증 |
+|------|------|------|
+| 1 | **`파일 선택`** → `/tmp/naviertwin_demo/cavity.vtu` | 경로 표시 |
+| 2 | **`Readiness 점검`** | "OK: VTKReader" |
+| 3 | **`데이터 로드`** | 우측 mesh 정보 + 3D 뷰어 (PyVista 있으면) |
+
+**기대 출력**: n_points=400, fields=`T`, `U`, `p`, `wallShearStress`.
+
+---
+
+### ② Analyze 탭 — Q-criterion / FFT / y+ / 해석해
+
+데이터셋 자동 주입.
+
+| op | 입력 | 검증 |
+|----|------|------|
+| **Q-criterion** | velocity_combo=`U` → `분석 실행` | 결과 텍스트에 "Q field added" |
+| **λ₂** | 동일 | mesh.point_data["lambda2"] 추가 |
+| **FFT/PSD** | dt=0.01, field=`U` | 주파수 표 출력 |
+| **y+** | rho=1.225, mu=1e-5, wallShearStress 사용 | y+ 분포 평균/min/max |
+| **해석해 비교** | Couette, μ=1, h=1, U_top=1 | "정확도 R²>0.99" |
+
+---
+
+### ③ Reduce 탭 — POD / Randomized / Incremental / MRPOD
+
+> 단일 .vtu (정적 1 스냅샷)는 POD에 부족. **시간 시리즈 .ntwin** 또는 **⑩ Post-Tools의 `eof` op** (시공간 분석 즉시 가능) 사용 권장.
+
+| 단계 | 동작 | 검증 |
+|------|------|------|
+| 1 | reducer=`POD`, n_modes=5 | 입력 활성화 |
+| 2 | **`축소 실행`** | "누적 에너지 X%, 소요 Y초" |
+
+---
+
+### ④ Model 탭 — 모델 학습
+
+| 단계 | 동작 | 검증 |
+|------|------|------|
+| 1 | model=`Kriging` | 파라미터 노출 |
+| 2 | **`모델 학습`** | Loss curve 갱신 → ⑦ Compare 자동 채워짐 |
+| 3 | **`후보 추천`** (BO) | "다음 평가점: x=..." |
+| 4 | **`연산자 학습`** (FNO/DeepONet) | PyTorch 있으면 학습 |
+
+---
+
+### ⑤ Twin 탭 — 디지털 트윈
+
+| 단계 | 동작 | 검증 |
+|------|------|------|
+| 1 | **`예측 실행`** | 학습된 surrogate 예측 → R² |
+| 2 | **`최적화 실행`** (BO) | 수렴 곡선 |
+| 3 | **`동화 quick-check`** (EnKF) | "RMSE: X → Y (감소)" |
+| 4 | **`저장`** → `/tmp/cavity.h5` | HDF5 파일 생성 |
+| 5 | **`로드`** | 파이프라인 복원 OK |
+
+---
+
+### ⑥ Export 탭
+
+| 단계 | 동작 | 검증 |
+|------|------|------|
+| 1 | format=`VTK` → 경로 → **`내보내기`** | ParaView로 열림 |
+| 2 | format=`CSV` | 엑셀로 열림 |
+| 3 | format=`ONNX` | `onnx.checker.check_model` 통과 |
+| 4 | format=`PDF Report` | 그림 + 메트릭 표 |
+
+---
+
+### ⑦ Compare 탭 — view-only
+
+④ Model에서 2개 이상 모델 학습 후 자동 갱신.
+
+---
+
+### ⑧ Simulation 탭 — 라이브 데모
+
+dataset과 무관 — 자체 시뮬레이션 (LBM/Streaming/RL/Burgers).
+
+---
+
+### ⑨ Explain 탭
+
+학습된 모델 후:
+- **SHAP** → 변수 기여도 막대 차트
+- **Symbolic** → `y ≈ 2x₀ + 0.3 sin(x₁)` LaTeX
+- **Attention** → Transformer heatmap
+
+---
+
+## 시나리오 2 — Post-Tools 핵심 op 검증 (cavity.vtu 로드 후)
+
+⑩ Post-Tools 탭은 ① Import 후 자동으로 dataset 주입. 데이터 라벨이 "로드됨 (400 pts, …, T, U, p)"로 변경되고 **필드 콤보** 활성화.
+
+### dataset 입력으로 작동하는 op (25개) — 권장 검증
+
+| op | 카테고리 | 검증 차트 |
+|----|----------|-----------|
+| **psd_welch** | spectral | log-log PSD |
+| **kolmogorov_slope** | spectral | E(k) loglog + slope |
+| **eof** | rom | 4-모드 subplot (n_modes=5) |
+| **reynolds_stats** | statistics | mean/RMS/TKE 텍스트 |
+| **two_point_acf** | statistics | R(r) + 적분 길이 마커 |
+| **box_stats** | statistics | broken_barh + outlier |
+| **quadrant_analysis** | statistics | Q1-Q4 4-bar |
+| **change_points** | anomaly | segment means bar |
+| **anomaly_mahalanobis** | anomaly | scores ndarray |
+| **denoise** | preprocessing | 평활 신호 line |
+| **safe_eval** | preprocessing | `sqrt(u**2+v**2)` 등 |
+| **ts_features** | features | 18 특성 dict |
+| **gof_normality** | validation | A² + 임계값 |
+| **stat_convergence** | statistics | Geweke z + ESS |
+| **quantile** | statistics | 분위값 |
+| **morphology_components** | topology | 마스크 + components |
+| **grid_derivatives** | topology | gradient/laplacian heatmap |
+| **helmholtz_decomp** | topology | 4 imshow |
+| **anisotropy_state** | turbulence | Lumley state |
+| **conditional_sampling** | statistics | 트리거 평균 |
+| **coord_transform** | topology | 좌표 변환 |
+| **time_interp** | preprocessing | 보간 신호 |
+| **plane_flux** | integrals | 평면 통과 flux |
+| **surface_forces** | integrals | F/M/lift/drag |
+| **line_probe** | preprocessing | 라인 샘플 |
+
+### 합성/외부 입력만 가능한 op (27개) — Demo 모드 전용
+
+`save_rom`, `load_rom`, `gappy_reconstruct`, `basis_interpolate`, `mass_search`, `find_motifs`, `mode_summary`, `subspace_drift`, `rom_residual`, `rom_envelope`, `surrogate_metrics`, `residual_diagnostics`, `ensemble_average`, `bic_model_average`, `stacking`, `morris_sensitivity`, `permutation_importance`, `batch_predict`, `trajectory_clustering`, `cell_volume_integrals`, `auto_report_field/probe`, `phase_average`, `running_moments`, `acoustic_strouhal`, `pod_truncation`, `critical_points`
+
+→ 이 op은 dataset과 무관한 합성 데이터 (예: 두 기저 행렬, 트래젝토리)가 필요. **dataset 로드 안 한 상태에서 `Demo 실행`** 으로 검증.
+
+### 절차 (cavity.vtu 로드 후)
+
+1. **필드 콤보**: `(자동 선택)` → `U` → `p` 순서로 변경하며 결과 비교
+2. **`Demo 실행`** 버튼이 `실행 (로드 데이터)` 으로 변경됨 확인
+3. 위 25개 op 차례 실행, 결과 텍스트의 입력 라벨이 "로드 데이터셋" 인지 확인
+4. **`CSV`** export → `/tmp/post_result.csv` → 엑셀로 열어 컬럼 확인
+5. **`차트 이미지 저장`** → PNG/SVG/PDF 선택
+6. **`카테고리 일괄 실행`**: `statistics` 선택 → markdown 요약 확인
+
+---
+
+## 시나리오 3 — 프로브 CSV로 시계열 op 검증 (CLI)
+
+`cavity_probe.csv`는 5Hz + 17Hz + 중간 평균 변화 + spike를 포함. GUI 직접 입력이 어려우면 CLI로 facade 호출:
 
 ```bash
 PYTHONPATH=src python3 -c "
-from naviertwin.examples.cavity_benchmark import generate_cavity_dataset
 import numpy as np
-ds = generate_cavity_dataset(n_t=30, n_x=40, n_y=40)
-ds.save('/tmp/cavity.ntwin')
-print('saved /tmp/cavity.ntwin')
+from naviertwin.core.post_process_facade import PostProcessFacade
+data = np.loadtxt('/tmp/naviertwin_demo/cavity_probe.csv',
+                  delimiter=',', skiprows=1)
+t, sig = data[:, 0], data[:, 1]
+
+facade = PostProcessFacade()
+
+# PSD: 5Hz, 17Hz 피크
+r = facade.run('psd_welch', signal=sig, fs=100.0, nperseg=256)
+top = sorted(np.argsort(r['psd'])[-3:], key=lambda i: r['psd'][i], reverse=True)
+print('PSD 상위 피크:', [round(r['frequency'][i], 2) for i in top])
+
+# Change points: ~1000
+print('변화점:', facade.run('change_points', signal=sig,
+       n_changepoints=1, method='binary')['changepoints'])
+
+# Anomaly: spike → crest factor 큼
+print('crest_factor:', round(facade.run('ts_features', signal=sig)['features']['crest_factor'], 2))
 "
 ```
 
-(예제 스크립트가 없으면 ① Import 탭의 `더미 데이터셋 생성` 기능 사용)
-
----
-
-## 탭 ① Import (불러오기)
-
-**목적**: CFD 결과 파일 (.foam / .cgns / .vtk / .vtu / .nc / .ntwin) 로드.
-
-### 기본 워크플로
-1. **`파일 선택`** → `/tmp/cavity.ntwin` 선택
-2. **`Readiness 점검`** 버튼 → "OK" 메시지
-3. **`데이터 로드`** → 우측 패널에 mesh 정보 (n_points, fields) 표시
-
-### 검증 포인트
-- ✅ 메쉬 정점 수 / 셀 수 표시
-- ✅ field 목록 (예: U, p, T) 표시
-- ✅ 우측 3D 뷰어에 mesh 렌더링 (PyVista)
-
-### 에지 케이스
-- 잘못된 파일 → "지원하지 않는 형식" 에러 메시지
-- 빈 폴더 선택 → 안내 메시지
-
----
-
-## 탭 ② Analyze (분석)
-
-**목적**: Q-criterion / λ₂ / FFT-PSD / y+ / 해석해 비교.
-
-### 기본 워크플로
-1. ① Import에서 데이터 로드 후 ② Analyze로 이동
-2. 좌측 메서드 리스트에서 **`Q-criterion`** 선택
-3. 속도 필드: `U` 선택
-4. **`분석 실행`** → 우측 결과 텍스트 영역에 통계 출력
-
-### 검증 포인트
-- ✅ Q-criterion: `Q-criterion` field가 mesh에 추가됨
-- ✅ FFT/PSD: 주파수 피크 표시
-- ✅ y+ 분석: 벽면 전단응력 → y+ 분포
-- ✅ 해석해 비교: Couette / Poiseuille 정확도 ≥ 0.99
-
----
-
-## 탭 ③ Reduce (차원 축소)
-
-**목적**: POD / Randomized POD / Incremental POD / MRPOD / AE / VAE.
-
-### 기본 워크플로
-1. 좌측 reducer 선택 (예: **POD**)
-2. 모드 수 입력 (예: 5)
-3. **`축소 실행`** → 누적 에너지 / 잠재 공간 좌표 표시
-
-### 검증 포인트
-- ✅ POD 99% 에너지 보존: 모드 수 자동 결정
-- ✅ Autoencoder/VAE: PyTorch 설치 필요 (없으면 disabled)
-- ✅ MRPOD: scale별 에너지 분포
-
----
-
-## 탭 ④ Model (모델 / 운영자 학습)
-
-**목적**: Kriging / RBF / FNO1D / DeepONet 등 surrogate 학습.
-
-### 기본 워크플로
-1. **`모델 학습`** → 학습 진행률 + loss curve 위젯 갱신
-2. **`후보 추천`**: Bayesian Optimization → 다음 평가점 제안
-3. **`연산자 학습`**: FNO/DeepONet 학습 (PyTorch 필요)
-
-### 검증 포인트
-- ✅ 모델 비교 탭 ⑦ 자동 갱신 (RMSE/R²)
-- ✅ Loss curve 실시간 업데이트
-- ✅ 모델별 학습 시간 / 메트릭
-
----
-
-## 탭 ⑤ Twin (디지털 트윈)
-
-**목적**: 파이프라인 빌드 / 예측 / 최적화 / 동화.
-
-### 기본 워크플로
-1. **`예측 실행`** → 학습된 surrogate로 새 파라미터 예측
-2. **`최적화 실행`**: Bayesian Opt 결과 plot
-3. **`동화 quick-check`**: EnKF/UKF 데이터 동화
-4. **`저장 / 로드`**: pipeline state HDF5
-
-### 검증 포인트
-- ✅ 예측이 실제와 비교 가능 (R²)
-- ✅ 최적화 수렴 곡선
-- ✅ HDF5 저장/복원 round-trip
-
----
-
-## 탭 ⑥ Export (내보내기)
-
-**목적**: VTK / CSV / ONNX / TorchScript / 보고서 PDF.
-
-### 기본 워크플로
-1. 출력 형식 선택 (VTK / CSV / ONNX / 보고서)
-2. **`찾기`**로 저장 경로 선택
-3. **`내보내기`** → 파일 생성
-
-### 검증 포인트
-- ✅ VTK: ParaView로 열림
-- ✅ CSV: 엑셀로 열림
-- ✅ ONNX: `onnx.checker.check_model` 통과
-- ✅ 보고서 PDF: 그림 + 메트릭 표
-
----
-
-## 탭 ⑦ Compare (모델 비교)
-
-**목적**: 학습된 모델들의 RMSE / R² 바 차트.
-
-### 검증 포인트
-- ✅ ④ Model에서 학습 후 자동 갱신
-- ✅ 테이블 + 차트 동시 표시 (수동 버튼 없음)
-
----
-
-## 탭 ⑧ Simulation (시뮬레이션)
-
-**목적**: LBM / Streaming / RL / Burgers FNO 라이브 데모.
-
-### 기본 워크플로
-1. 시뮬레이션 종류 선택
-2. **`시뮬레이션 실행`** → 시간 진행 애니메이션
-
-### 검증 포인트
-- ✅ 실시간 frame 업데이트
-- ✅ 정지 / 재시작 가능
-
----
-
-## 탭 ⑨ Explain (설명가능성)
-
-**목적**: SHAP / Symbolic regression / Attention 시각화.
-
-### 기본 워크플로
-1. **`SHAP 설명 실행`** → 입력 변수별 기여도
-2. **`Symbolic 식 추정`** → ROM 계수의 해석적 식
-3. **`Attention 시각화 실행`** → Transformer attention map
-
-### 검증 포인트
-- ✅ SHAP 막대 차트
-- ✅ Symbolic 식 LaTeX 표시
-- ✅ Attention heatmap
-
----
-
-## 탭 ⑩ Post-Tools (후처리 도구) ⭐ R591-647 통합
-
-**목적**: 52개 후처리 op (PSD / EOF / Reynolds stats / change points / ...) 통합 GUI.
-
-### 기본 워크플로 (Demo 데이터)
-1. 좌측 **카테고리** 콤보 → `spectral` 선택
-2. 연산 리스트 → **`psd_welch`** 더블클릭
-3. 우측 설명 패널에 op 정보 표시
-4. **Scalar 파라미터**: `fs=1000`, `nperseg=512` 입력
-5. **프리셋**: `high_resolution` 선택 (factory preset 자동 적용)
-6. **`Demo 실행 (합성 데이터)`** → 차트 + 텍스트 결과
-
-### 검증 포인트 — 핵심 op 5종
-
-| op | 카테고리 | 차트 검증 |
-|----|----------|-----------|
-| `psd_welch` | spectral | log-log 곡선, 피크 주파수 ≈ 5Hz |
-| `eof` | rom | 4개 모드 subplot, 첫 모드 에너지 최대 |
-| `reynolds_stats` | statistics | mean/RMS/TKE 텍스트 |
-| `change_points` | anomaly | 변화점 위치 마커 |
-| `quadrant_analysis` | statistics | Q1-Q4 4-bar chart |
-
-### 결과 export 검증
-1. op 실행 후 **`CSV`** 클릭 → 저장 경로 선택 → 엑셀로 열림
-2. **`JSON`** → 큰 배열은 summary, 작은 건 full
-3. **`NPZ`** → `np.load()`로 복원
-4. **`차트 이미지 저장`** → PNG / SVG / PDF 선택 가능
-
-### 일괄 실행 검증
-1. 카테고리: `statistics` 선택
-2. **`카테고리 일괄 실행`** → 모든 statistics op 실행 → markdown 요약 (✅/❌)
-
-### 사용자 프리셋 검증
-1. `denoise` 선택, `window_length=21`, `polyorder=5` 입력
-2. **`프리셋 저장`** → 이름 `my_smooth` 입력
-3. 다른 op로 갔다가 다시 `denoise` 선택 → 프리셋 콤보에 `my_smooth` 보임
-
-### 이력 검증
-1. 여러 op 실행
-2. **`이력 보기`** → 다이얼로그에 시간순 테이블 표시
-3. 항목 더블클릭 → 패널이 op + 파라미터 자동 복원
-4. **`재실행`** 버튼
-
-### Dataset 연결 검증
-1. ① Import에서 데이터 로드
-2. ⑩ Post-Tools 좌측 상단 **데이터 라벨** "로드됨" 으로 변경
-3. **필드 콤보** 활성화 → `U`, `p`, `T` 등 선택 가능
-4. `psd_welch` 실행 → 입력 라벨 "로드 데이터셋"
-
-### 언어 전환 검증
-1. 메뉴 `View → English` → 모든 라벨 영어로 변경
-2. `View → 한국어` → 한국어로 복귀
-3. 카테고리/프리셋 콤보 첫 항목도 변경 (`전체` ↔ `All`)
-
----
-
-## 자동화 회귀 검증 (CLI)
-
-GUI 직접 클릭 대신 자동 smoke test로 검증:
-
-```bash
-# 모든 GUI 패널 + facade smoke
-QT_QPA_PLATFORM=offscreen pytest tests/test_postproc_*.py tests/test_main_window_*.py -q
-
-# Post-Tools 단독
-QT_QPA_PLATFORM=offscreen pytest tests/test_postproc_panel.py tests/test_postproc_chart.py -q
-
-# Facade (52개 op core 검증)
-pytest tests/test_post_process_facade.py tests/test_facade_rom_extensions.py tests/test_facade_round653.py -q
+기대:
+```
+PSD 상위 피크: [5.0, 17.0, ...]
+변화점: [995] (또는 1000 근처)
+crest_factor: > 5
 ```
 
-기대: **130+ tests pass, 0 failed**.
+이 결과를 GUI Post-Tools에서 동일 op + 같은 신호로 실행해 차트가 일치하는지 비교.
 
 ---
 
-## 알려진 제약
+## 시나리오 4 — 회귀 자동 검증
 
-- **PyTorch 미설치**: ④ Model의 FNO/DeepONet, ③ Reduce의 AE/VAE 비활성
-- **PyVista 미설치**: ① Import의 3D 뷰어 비활성 (mesh 정보만 텍스트)
-- **pywt 미설치**: WNO / WaveletDiffusion 관련 op는 skip
-- **gmsh 미설치**: 메쉬 생성 기능 (① Import의 더미) 제한
-- **matplotlib 미설치**: ⑩ Post-Tools 차트 영역 미표시 (텍스트만)
+직접 클릭 대신 자동:
 
-위 의존성은 모두 **optional**. 핵심 후처리/ROM 기능은 numpy + scipy + PySide6만으로 동작.
+```bash
+QT_QPA_PLATFORM=offscreen pytest \
+  tests/test_postproc_*.py \
+  tests/test_main_window_*.py \
+  tests/test_post_process_*.py \
+  -q
+```
+
+기대: **180+ tests pass, 0 failed**.
+
+---
+
+## 트러블슈팅
+
+| 증상 | 해결 |
+|------|------|
+| 3D 뷰어 비어있음 | `pip install pyvistaqt pyvista` |
+| AE/VAE 비활성 | `pip install torch` |
+| FNO/DeepONet 학습 안 됨 | PyTorch CUDA 없으면 CPU (시간 걸림) |
+| Post-Tools 차트 안 보임 | `pip install matplotlib` |
+| WNO 결과 skip | `pip install pywavelets` |
+| OpenFOAM 직접 로드 실패 | `.foam` 더미 파일 필요 — 케이스 디렉토리에 빈 파일 생성 |
+
+---
+
+## 검증 체크리스트 (요약)
+
+- [ ] `scripts/make_test_dataset.py` 실행 → 3 파일 생성
+- [ ] GUI 실행, 10개 탭 모두 표시 확인
+- [ ] ① Import → cavity.vtu 로드 → 400 pts, 4 fields 표시
+- [ ] ② Analyze → Q-criterion / FFT / y+ / 해석해 모두 실행
+- [ ] ④ Model → Kriging 학습 → ⑦ Compare 자동 갱신
+- [ ] ⑤ Twin → 예측 + 최적화 + HDF5 저장/로드
+- [ ] ⑥ Export → VTK / CSV / 보고서 PDF
+- [ ] ⑨ Explain → SHAP / Symbolic / Attention
+- [ ] ⑩ Post-Tools → 25 dataset op 모두 통과 (라이브 검증 결과: **25/25 OK**)
+- [ ] CSV/JSON/NPZ/PNG export 4종 모두 파일 생성
+- [ ] 카테고리 일괄 실행 markdown 요약 표시
+- [ ] 사용자 프리셋 저장 → 재선택 시 폼 복원
+- [ ] 이력 보기 다이얼로그 → 더블클릭 재실행
+- [ ] 메뉴 View → English 전환 → 모든 라벨 영어
