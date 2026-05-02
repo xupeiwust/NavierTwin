@@ -54,7 +54,19 @@ class PostProcessFacade:
             "description": spec["description"],
             "params": spec["params"],
             "returns": spec["returns"],
+            "scalar_params": _SCALAR_PARAM_SPECS.get(op_name, {}),
         }
+
+    def scalar_param_specs(self, op_name: str) -> dict[str, dict[str, Any]]:
+        """op의 사용자-조정 가능한 scalar 파라미터 메타데이터 반환.
+
+        Returns:
+            {param_name: {"type": "int"|"float"|"str", "default": value,
+                          "min": ?, "max": ?, "options": [...] }}.
+        """
+        if op_name not in _OPERATIONS:
+            raise KeyError(f"unknown op '{op_name}'")
+        return _SCALAR_PARAM_SPECS.get(op_name, {})
 
     def run(self, op_name: str, **kwargs: Any) -> dict[str, Any]:
         """op 실행. **kwargs는 op_spec의 params와 일치해야 한다."""
@@ -941,6 +953,89 @@ def _op_auto_report_field(
 
     report = analyze_field_snapshots(X, n_modes=n_modes)
     return {"report": report, "markdown": to_markdown(report)}
+
+
+# ---------------------------------------------------------------------------
+# 사용자-조정 가능 scalar 파라미터 메타데이터 (GUI 폼용)
+# ---------------------------------------------------------------------------
+
+_SCALAR_PARAM_SPECS: dict[str, dict[str, dict[str, Any]]] = {
+    "psd_welch": {
+        "fs": {"type": "float", "default": 1.0, "min": 1e-6, "max": 1e9},
+        "nperseg": {"type": "int", "default": 256, "min": 16, "max": 65536},
+        "window": {"type": "str", "default": "hann",
+                   "options": ["hann", "hamming", "boxcar"]},
+    },
+    "kolmogorov_slope": {
+        "dx": {"type": "float", "default": 1.0, "min": 1e-9, "max": 1e9},
+    },
+    "box_stats": {
+        "whisker_factor": {"type": "float", "default": 1.5, "min": 0.0, "max": 10.0},
+    },
+    "change_points": {
+        "n_changepoints": {"type": "int", "default": 1, "min": 1, "max": 100},
+        "method": {"type": "str", "default": "binary",
+                   "options": ["binary", "pelt"]},
+    },
+    "denoise": {
+        "window_length": {"type": "int", "default": 11, "min": 3, "max": 999},
+        "polyorder": {"type": "int", "default": 3, "min": 1, "max": 10},
+    },
+    "phase_average": {
+        "period": {"type": "float", "default": 1.0, "min": 1e-9, "max": 1e9},
+        "n_bins": {"type": "int", "default": 36, "min": 4, "max": 1024},
+    },
+    "eof": {
+        "n_modes": {"type": "int", "default": 5, "min": 1, "max": 100},
+    },
+    "auto_report_field": {
+        "n_modes": {"type": "int", "default": 5, "min": 1, "max": 100},
+    },
+    "auto_report_probe": {
+        "fs": {"type": "float", "default": 1.0, "min": 1e-6, "max": 1e9},
+    },
+    "two_point_acf": {
+        "dx": {"type": "float", "default": 1.0, "min": 1e-9, "max": 1e9},
+        "max_lag": {"type": "int", "default": 50, "min": 1, "max": 10000},
+    },
+    "pod_truncation": {
+        "fraction": {"type": "float", "default": 0.99, "min": 0.0, "max": 1.0},
+    },
+    "quantile": {
+        "q": {"type": "float", "default": 50.0, "min": 0.0, "max": 100.0},
+    },
+    "critical_points": {
+        "dx": {"type": "float", "default": 1.0, "min": 1e-9, "max": 1e9},
+        "dy": {"type": "float", "default": 1.0, "min": 1e-9, "max": 1e9},
+    },
+    "find_motifs": {
+        "window": {"type": "int", "default": 30, "min": 2, "max": 10000},
+        "k": {"type": "int", "default": 1, "min": 1, "max": 100},
+    },
+    "trajectory_clustering": {
+        "window": {"type": "int", "default": 20, "min": 2, "max": 10000},
+        "n_clusters": {"type": "int", "default": 3, "min": 2, "max": 50},
+    },
+    "morris_sensitivity": {
+        "n_trajectories": {"type": "int", "default": 10, "min": 1, "max": 1000},
+        "n_levels": {"type": "int", "default": 4, "min": 2, "max": 100},
+    },
+    "permutation_importance": {
+        "n_repeats": {"type": "int", "default": 5, "min": 1, "max": 100},
+    },
+    "morphology_components": {
+        "threshold": {"type": "float", "default": 0.5, "min": -1e9, "max": 1e9},
+        "min_size": {"type": "int", "default": 4, "min": 1, "max": 10000},
+    },
+    "batch_predict": {
+        "chunk_size": {"type": "int", "default": 1024, "min": 1, "max": 1000000},
+    },
+    "acoustic_strouhal": {
+        "f": {"type": "float", "default": 100.0, "min": 0.0, "max": 1e9},
+        "L": {"type": "float", "default": 0.1, "min": 1e-9, "max": 1e9},
+        "U": {"type": "float", "default": 10.0, "min": 1e-9, "max": 1e9},
+    },
+}
 
 
 _OPERATIONS: dict[str, dict[str, Any]] = {

@@ -15,12 +15,14 @@ import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QPushButton,
+    QSpinBox,
     QSplitter,
     QTextEdit,
     QVBoxLayout,
@@ -83,6 +85,12 @@ class PostProcessPanel(QWidget):
         self._op_list.currentTextChanged.connect(self._on_op_selected)
         op_layout.addWidget(self._op_list)
         left_layout.addWidget(op_group)
+
+        # 동적 파라미터 폼
+        param_group = QGroupBox("Scalar 파라미터")
+        self._param_form_layout = QFormLayout(param_group)
+        self._param_widgets: dict[str, QWidget] = {}
+        left_layout.addWidget(param_group)
 
         # 실행 버튼
         self._run_btn = QPushButton("Demo 실행 (합성 데이터)")
@@ -155,6 +163,66 @@ class PostProcessPanel(QWidget):
         )
         self._params_label.setText(", ".join(info["params"]))
         self._returns_label.setText(", ".join(info["returns"]))
+        self._rebuild_param_form(op_name)
+
+    def _rebuild_param_form(self, op_name: str) -> None:
+        """선택된 op의 scalar 파라미터에 맞춰 동적 폼 재생성."""
+        # 기존 폼 비우기
+        while self._param_form_layout.rowCount() > 0:
+            self._param_form_layout.removeRow(0)
+        self._param_widgets.clear()
+
+        specs = self._facade.scalar_param_specs(op_name)
+        if not specs:
+            label = QLabel("(scalar 파라미터 없음)")
+            label.setStyleSheet("color: #888;")
+            self._param_form_layout.addRow(label)
+            return
+
+        for name, spec in specs.items():
+            widget = self._build_param_widget(spec)
+            self._param_form_layout.addRow(f"{name}:", widget)
+            self._param_widgets[name] = widget
+
+    @staticmethod
+    def _build_param_widget(spec: dict[str, Any]) -> QWidget:
+        """spec dict → 적절한 입력 위젯."""
+        ptype = spec.get("type", "str")
+        default = spec.get("default")
+        if ptype == "int":
+            w = QSpinBox()
+            w.setRange(int(spec.get("min", -10**9)), int(spec.get("max", 10**9)))
+            w.setValue(int(default if default is not None else 0))
+            return w
+        if ptype == "float":
+            w = QDoubleSpinBox()
+            w.setDecimals(8)
+            w.setRange(float(spec.get("min", -1e18)), float(spec.get("max", 1e18)))
+            w.setValue(float(default if default is not None else 0.0))
+            return w
+        if ptype == "str":
+            w = QComboBox()
+            options = spec.get("options", [])
+            for opt in options:
+                w.addItem(str(opt))
+            if default in options:
+                w.setCurrentText(str(default))
+            return w
+        # fallback
+        w = QLabel(str(default))
+        return w
+
+    def _read_param_values(self) -> dict[str, Any]:
+        """현재 폼 위젯들의 값을 dict로 추출."""
+        values: dict[str, Any] = {}
+        for name, widget in self._param_widgets.items():
+            if isinstance(widget, QSpinBox):
+                values[name] = int(widget.value())
+            elif isinstance(widget, QDoubleSpinBox):
+                values[name] = float(widget.value())
+            elif isinstance(widget, QComboBox):
+                values[name] = widget.currentText()
+        return values
 
     def _on_run_clicked(self) -> None:
         op_name = self._op_list.currentItem()
@@ -174,10 +242,19 @@ class PostProcessPanel(QWidget):
             self._result_text.setPlainText(f"실행 실패: {e}")
 
     def _build_run_kwargs(self, op_name: str) -> tuple[dict[str, Any], str]:
-        """현재 패널 상태에 맞는 op 입력을 구성한다."""
+        """현재 패널 상태에 맞는 op 입력을 구성한다.
+
+        Scalar 파라미터는 사용자 폼 값으로 덮어쓴다 (배열은 dataset/smoke).
+        """
         if self._dataset is not None:
-            return self._build_dataset_kwargs(op_name, self._dataset), "dataset"
-        return self._build_smoke_kwargs(op_name), "demo"
+            kwargs = self._build_dataset_kwargs(op_name, self._dataset)
+            source = "dataset"
+        else:
+            kwargs = self._build_smoke_kwargs(op_name)
+            source = "demo"
+        # 사용자 입력 scalar 파라미터로 덮어쓰기
+        kwargs.update(self._read_param_values())
+        return kwargs, source
 
     @classmethod
     def _build_dataset_kwargs(cls, op_name: str, dataset: object) -> dict[str, Any]:
