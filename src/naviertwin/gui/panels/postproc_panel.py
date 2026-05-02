@@ -82,6 +82,14 @@ class PostProcessPanel(QWidget):
         self._data_label.setWordWrap(True)
         left_layout.addWidget(self._data_label)
 
+        # 데이터셋 필드 선택 (로드된 dataset이 있을 때만 사용)
+        self._field_combo = QComboBox()
+        self._field_combo.setEnabled(False)
+        self._field_combo.setToolTip(
+            "후처리에 사용할 dataset field. 로드된 데이터셋이 있을 때만 활성화."
+        )
+        left_layout.addWidget(self._field_combo)
+
         # 카테고리 필터
         cat_group = QGroupBox(self._tr("posttools.category"))
         cat_layout = QVBoxLayout(cat_group)
@@ -236,7 +244,74 @@ class PostProcessPanel(QWidget):
         self._data_label.setText(
             f"데이터: 로드됨 ({n_points} pts, {n_cells} cells, {preview})"
         )
-        self._run_btn.setText("실행 (로드 데이터)")
+        self._run_btn.setText(self._tr("posttools.run.dataset"))
+        # 필드 콤보 갱신
+        self._field_combo.blockSignals(True)
+        self._field_combo.clear()
+        self._field_combo.addItem("(자동 선택)")
+        try:
+            fields = self._dataset_numeric_fields(dataset)
+            for name in fields:
+                self._field_combo.addItem(name)
+            self._field_combo.setEnabled(True)
+        except (ValueError, AttributeError):
+            self._field_combo.setEnabled(False)
+        self._field_combo.blockSignals(False)
+
+    def clear_dataset(self) -> None:
+        """로드된 dataset 연결을 해제하고 합성 모드로 복귀."""
+        self._dataset = None
+        self._data_label.setText("데이터: 합성 데모")
+        self._run_btn.setText(self._tr("posttools.run.demo"))
+        self._field_combo.clear()
+        self._field_combo.setEnabled(False)
+
+    def selected_field_name(self) -> str | None:
+        """필드 콤보에서 사용자가 명시적으로 선택한 필드 이름 ('(자동 선택)'이면 None)."""
+        if not self._field_combo.isEnabled():
+            return None
+        text = self._field_combo.currentText()
+        if not text or text in ("(자동 선택)", "(auto)"):
+            return None
+        return text
+
+    def retranslate_ui(self) -> None:
+        """언어 변경 후 패널 라벨을 다시 적용한다.
+
+        외부에서 self._t의 언어를 바꾼 뒤 호출하면 즉시 UI에 반영.
+        """
+        # 정적 텍스트
+        try:
+            self._run_btn.setText(
+                self._tr("posttools.run.dataset")
+                if self._dataset is not None
+                else self._tr("posttools.run.demo")
+            )
+            self._run_category_btn.setText(self._tr("posttools.run.category"))
+            self._save_chart_btn.setText(self._tr("posttools.save.chart"))
+            self._save_preset_btn.setText(self._tr("posttools.save.preset"))
+            self._show_history_btn.setText(self._tr("posttools.show.history"))
+            # 카테고리 콤보 첫 항목
+            if self._category_combo.count() > 0:
+                self._category_combo.setItemText(
+                    0, self._tr("posttools.category.all"),
+                )
+            # 프리셋 콤보 첫 항목
+            if self._preset_combo.count() > 0:
+                self._preset_combo.setItemText(
+                    0, self._tr("posttools.preset.none"),
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def set_language(self, lang: str) -> None:
+        """패널 언어 전환 (translator 자체에 호환되는 set_language 호출)."""
+        try:
+            if hasattr(self._t, "set_language"):
+                self._t.set_language(lang)
+        except Exception:  # noqa: BLE001
+            return
+        self.retranslate_ui()
 
     def _refresh_op_list(self) -> None:
         """카테고리 필터에 맞춰 op 리스트 갱신."""
@@ -593,7 +668,10 @@ class PostProcessPanel(QWidget):
         Scalar 파라미터는 사용자 폼 값으로 덮어쓴다 (배열은 dataset/smoke).
         """
         if self._dataset is not None:
-            kwargs = self._build_dataset_kwargs(op_name, self._dataset)
+            kwargs = self._build_dataset_kwargs(
+                op_name, self._dataset,
+                preferred_field=self.selected_field_name(),
+            )
             source = "dataset"
         else:
             kwargs = self._build_smoke_kwargs(op_name)
@@ -603,10 +681,27 @@ class PostProcessPanel(QWidget):
         return kwargs, source
 
     @classmethod
-    def _build_dataset_kwargs(cls, op_name: str, dataset: object) -> dict[str, Any]:
-        """로드된 CFD dataset에서 facade op 입력을 자동 구성한다."""
+    def _build_dataset_kwargs(
+        cls,
+        op_name: str,
+        dataset: object,
+        preferred_field: str | None = None,
+    ) -> dict[str, Any]:
+        """로드된 CFD dataset에서 facade op 입력을 자동 구성한다.
+
+        Args:
+            op_name: facade op 이름.
+            dataset: CFDDataset.
+            preferred_field: 사용자가 명시적으로 선택한 필드 이름 (1D 신호 우선).
+        """
         fields = cls._dataset_numeric_fields(dataset)
-        signal = cls._primary_signal(fields)
+        # 사용자 명시 필드가 있으면 그걸 primary signal로
+        if preferred_field is not None and preferred_field in fields:
+            signal = cls._to_scalar_series(fields[preferred_field])
+            if signal.size < 2:
+                signal = cls._primary_signal(fields)
+        else:
+            signal = cls._primary_signal(fields)
         matrix = cls._field_matrix(fields)
 
         if op_name == "psd_welch":

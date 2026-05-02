@@ -241,6 +241,12 @@ class MainWindow(QMainWindow):
             index = self._tabs.indexOf(widget)
             if index >= 0:
                 self._tabs.setTabText(index, self._localized_tab_title(key, num, default))
+        # Post-Tools 패널 retranslate (있으면)
+        if self._postproc_panel is not None:
+            try:
+                self._postproc_panel.set_language(lang)
+            except Exception:  # noqa: BLE001
+                pass
         self._refresh_view_menu()
 
     def set_theme(self, theme: str) -> None:
