@@ -774,6 +774,123 @@ def _op_save_rom(
     return {"saved_path": str(p)}
 
 
+def _op_load_rom(path: str) -> dict[str, Any]:
+    from naviertwin.core.dimensionality_reduction.rom_serialization import load_rom
+
+    data = load_rom(path)
+    return {
+        "modes": data["modes"],
+        "singular_values": data["singular_values"],
+        "metadata": data.get("metadata", {}),
+    }
+
+
+def _op_mode_summary(
+    spatial_modes: NDArray[np.float64],
+    singular_values: NDArray[np.float64],
+    temporal_modes: NDArray[np.float64] | None = None,
+) -> dict[str, Any]:
+    from naviertwin.core.dimensionality_reduction.mode_inspection import (
+        mode_orthogonality,
+        mode_summary,
+    )
+
+    summary = mode_summary(spatial_modes, singular_values, temporal_modes)
+    ortho = mode_orthogonality(spatial_modes)
+    return {
+        "modes": summary,
+        "orthogonality": ortho,
+        "n_modes": len(summary),
+    }
+
+
+def _op_basis_interpolate(
+    bases: list,
+    params: NDArray[np.float64],
+    target: float,
+) -> dict[str, Any]:
+    from naviertwin.core.dimensionality_reduction.parametric_basis import (
+        basis_distance_curve,
+        linear_interpolate_bases,
+    )
+
+    arr_bases = [np.asarray(b, dtype=np.float64) for b in bases]
+    interpolated = linear_interpolate_bases(arr_bases, params, target=target)
+    distances = basis_distance_curve(arr_bases)
+    return {
+        "interpolated_basis": interpolated,
+        "pairwise_distances": distances,
+    }
+
+
+def _op_batch_predict(
+    predict_fn: Any,
+    X: NDArray[np.float64],
+    chunk_size: int = 1024,
+) -> dict[str, Any]:
+    from naviertwin.core.surrogate.batch_evaluation import batch_predict
+
+    y = batch_predict(predict_fn, X, chunk_size=chunk_size)
+    return {"predictions": y, "n_samples": int(y.shape[0])}
+
+
+def _op_morris_sensitivity(
+    f: Any,
+    bounds: NDArray[np.float64],
+    n_trajectories: int = 10,
+    n_levels: int = 4,
+) -> dict[str, Any]:
+    from naviertwin.core.surrogate.gradient_sensitivity import (
+        morris_elementary_effects,
+    )
+
+    mu_star, sigma = morris_elementary_effects(
+        f, bounds, n_trajectories=n_trajectories, n_levels=n_levels,
+    )
+    return {"mu_star": mu_star, "sigma": sigma}
+
+
+def _op_permutation_importance(
+    f: Any,
+    X: NDArray[np.float64],
+    y: NDArray[np.float64],
+    n_repeats: int = 5,
+) -> dict[str, Any]:
+    from naviertwin.core.surrogate.gradient_sensitivity import (
+        permutation_importance,
+    )
+
+    importance = permutation_importance(f, X, y, n_repeats=n_repeats)
+    return {"importance": importance}
+
+
+def _op_bic_model_average(
+    predictions: list,
+    bic_values: NDArray[np.float64],
+) -> dict[str, Any]:
+    from naviertwin.core.surrogate.model_averaging import (
+        bic_weights,
+        weighted_average,
+    )
+
+    arr_list = [np.asarray(p, dtype=np.float64) for p in predictions]
+    weights = bic_weights(np.asarray(bic_values, dtype=np.float64))
+    avg = weighted_average(arr_list, weights=weights)
+    return {"weights": weights, "average": avg}
+
+
+def _op_stacking(
+    predictions: NDArray[np.float64],
+    y_true: NDArray[np.float64],
+    nonnegative: bool = True,
+) -> dict[str, Any]:
+    from naviertwin.core.surrogate.model_averaging import stacking_least_squares
+
+    weights = stacking_least_squares(predictions, y_true, nonnegative=nonnegative)
+    stacked = predictions @ weights
+    return {"weights": weights, "stacked_prediction": stacked}
+
+
 def _op_mass_search(
     query: NDArray[np.float64],
     series: NDArray[np.float64],
@@ -903,6 +1020,62 @@ _OPERATIONS: dict[str, dict[str, Any]] = {
         "description": "ROM을 NPZ로 저장",
         "params": ["path", "modes", "singular_values"],
         "returns": ["saved_path"],
+    },
+    "load_rom": {
+        "fn": _op_load_rom,
+        "category": "rom",
+        "description": "NPZ ROM 로드",
+        "params": ["path"],
+        "returns": ["modes", "singular_values", "metadata"],
+    },
+    "mode_summary": {
+        "fn": _op_mode_summary,
+        "category": "rom",
+        "description": "POD 모드별 패키지 dict + 직교성 진단",
+        "params": ["spatial_modes", "singular_values", "temporal_modes"],
+        "returns": ["modes", "orthogonality", "n_modes"],
+    },
+    "basis_interpolate": {
+        "fn": _op_basis_interpolate,
+        "category": "rom",
+        "description": "Grassmann manifold 기저 보간 (Amsallem-Farhat)",
+        "params": ["bases", "params", "target"],
+        "returns": ["interpolated_basis", "pairwise_distances"],
+    },
+    "batch_predict": {
+        "fn": _op_batch_predict,
+        "category": "validation",
+        "description": "Chunked surrogate 배치 추론",
+        "params": ["predict_fn", "X", "chunk_size"],
+        "returns": ["predictions", "n_samples"],
+    },
+    "morris_sensitivity": {
+        "fn": _op_morris_sensitivity,
+        "category": "validation",
+        "description": "Morris elementary effects (μ*, σ)",
+        "params": ["f", "bounds", "n_trajectories", "n_levels"],
+        "returns": ["mu_star", "sigma"],
+    },
+    "permutation_importance": {
+        "fn": _op_permutation_importance,
+        "category": "validation",
+        "description": "Permutation importance 변수 중요도",
+        "params": ["f", "X", "y", "n_repeats"],
+        "returns": ["importance"],
+    },
+    "bic_model_average": {
+        "fn": _op_bic_model_average,
+        "category": "validation",
+        "description": "BIC 가중 Bayesian Model Averaging",
+        "params": ["predictions", "bic_values"],
+        "returns": ["weights", "average"],
+    },
+    "stacking": {
+        "fn": _op_stacking,
+        "category": "validation",
+        "description": "Least-squares stacking 모델 가중치",
+        "params": ["predictions", "y_true", "nonnegative"],
+        "returns": ["weights", "stacked_prediction"],
     },
     "mass_search": {
         "fn": _op_mass_search,

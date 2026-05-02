@@ -438,6 +438,48 @@ class PostProcessPanel(QWidget):
                 "modes": rng.standard_normal((20, 5)),
                 "singular_values": np.array([5.0, 3.0, 2.0, 1.0, 0.5]),
             },
+            "load_rom": {
+                "path": "/tmp/_facade_rom_smoke.npz",
+            },
+            "mode_summary": {
+                "spatial_modes": np.linalg.qr(rng.standard_normal((20, 4)))[0],
+                "singular_values": np.array([5.0, 3.0, 2.0, 1.0]),
+                "temporal_modes": rng.standard_normal((4, 30)),
+            },
+            "basis_interpolate": {
+                "bases": [
+                    np.linalg.qr(rng.standard_normal((20, 3)))[0],
+                    np.linalg.qr(rng.standard_normal((20, 3)))[0],
+                ],
+                "params": np.array([0.0, 1.0]),
+                "target": 0.5,
+            },
+            "batch_predict": {
+                "predict_fn": lambda X: np.sum(X ** 2, axis=1),
+                "X": rng.standard_normal((100, 5)),
+                "chunk_size": 25,
+            },
+            "morris_sensitivity": {
+                "f": lambda X: X[:, 0] + 2 * X[:, 1],
+                "bounds": np.array([[0.0, 1.0]] * 3),
+                "n_trajectories": 5,
+                "n_levels": 4,
+            },
+            "permutation_importance": {
+                "f": lambda X: 5 * X[:, 0] + 0.1 * X[:, 1],
+                "X": rng.uniform(0, 1, (100, 2)),
+                "y": rng.uniform(0, 1, 100),
+                "n_repeats": 3,
+            },
+            "bic_model_average": {
+                "predictions": [rng.standard_normal(10), rng.standard_normal(10)],
+                "bic_values": np.array([100.0, 105.0]),
+            },
+            "stacking": {
+                "predictions": rng.standard_normal((50, 3)),
+                "y_true": rng.standard_normal(50),
+                "nonnegative": True,
+            },
             "mass_search": {
                 "query": base_signal[100:130].copy(),
                 "series": base_signal,
